@@ -14,6 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 function register_shortcodes() {
     add_shortcode( 'tsdb_live_fixtures', __NAMESPACE__ . '\\shortcode_live_fixtures' );
     add_shortcode( 'tsdb_live_event', __NAMESPACE__ . '\\shortcode_live_event' );
+    add_shortcode( 'tsdb_live_standings', __NAMESPACE__ . '\\shortcode_live_standings' );
 }
 add_action( 'init', __NAMESPACE__ . '\\register_shortcodes' );
 
@@ -57,4 +58,26 @@ function shortcode_live_event( $atts ) {
     );
     wp_enqueue_script( 'tsdb-live-event' );
     return '<div class="tsdb-live-event" data-tsdb="' . esc_attr( wp_json_encode( $atts ) ) . '"></div>';
+}
+
+/**
+ * Render league standings via shortcode.
+ *
+ * Usage: [tsdb_live_standings league="123" season="2023" status="live"]
+ *
+ * @param array $atts Shortcode attributes.
+ * @return string
+ */
+function shortcode_live_standings( $atts ) {
+    $atts = shortcode_atts(
+        [
+            'league' => 0,
+            'season' => '',
+            'status' => 'live',
+        ],
+        $atts,
+        'tsdb_live_standings'
+    );
+    wp_enqueue_script( 'tsdb-live-standings' );
+    return '<div class="tsdb-live-standings" data-tsdb="' . esc_attr( wp_json_encode( $atts ) ) . '"></div>';
 }
