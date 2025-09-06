@@ -364,6 +364,11 @@ class Sync_Manager {
                 ],
                 [ '%d','%d','%d','%d','%d','%s','%s','%s','%d','%d','%s','%s' ]
             );
+
+            if ( ! empty( $row['idEvent'] ) ) {
+                $this->cache->delete( 'event_' . $row['idEvent'] );
+            }
+
             $count++;
         }
         if ( $count ) {
@@ -371,6 +376,8 @@ class Sync_Manager {
             $this->cache->delete( 'fixtures_' . $league_id . '_live' );
             $this->cache->delete( 'fixtures_' . $league_id . '_inplay' );
             $this->cache->delete( 'fixtures_' . $league_id . '_finished' );
+            $this->cache->delete( 'live_' . $league_id );
+            $this->cache->delete( 'live_all' );
         }
         return $count;
     }
