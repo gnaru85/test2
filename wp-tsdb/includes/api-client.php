@@ -53,6 +53,7 @@ class Api_Client {
         $delay    = 15;
         for ( $attempt = 0; $attempt < 4; $attempt++ ) {
             if ( $attempt > 0 ) {
+                $this->logger->warning( 'api', 'retrying in ' . $delay . 's' );
                 sleep( $delay );
                 $delay = min( $delay * 2, 60 );
             }
@@ -66,7 +67,13 @@ class Api_Client {
                     break; // success
                 }
                 $this->logger->error( 'api', 'HTTP ' . $code . ' for ' . $endpoint );
-                $response = new \WP_Error( 'tsdb_http_' . $code, 'HTTP ' . $code );
+                if ( 429 === $code ) {
+                    $response = new \WP_Error( 'tsdb_rate_limited', 'HTTP 429' );
+                } elseif ( $code >= 500 && $code < 600 ) {
+                    $response = new \WP_Error( 'tsdb_server_error', 'HTTP ' . $code );
+                } else {
+                    $response = new \WP_Error( 'tsdb_http_' . $code, 'HTTP ' . $code );
+                }
             }
 
             if ( $attempt === 3 ) {
