@@ -7,14 +7,19 @@ namespace TSDB;
 class Sync_Manager {
     protected $api;
     protected $logger;
+    protected $next_runs = [];
+    protected $active_leagues = [];
 
     public function __construct( Api_Client $api, Logger $logger ) {
         $this->api    = $api;
         $this->logger = $logger;
+        $this->next_runs     = get_option( 'tsdb_sync_next_runs', [] );
+        $this->active_leagues = get_option( 'tsdb_active_leagues', [] );
     }
 
     public function init_cron() {
         add_action( 'tsdb_cron_tick', [ $this, 'cron_tick' ] );
+        add_action( 'tsdb_sync_league', [ $this, 'run_league_sync' ], 10, 1 );
         if ( ! wp_next_scheduled( 'tsdb_cron_tick' ) ) {
             wp_schedule_event( time(), 'minute', 'tsdb_cron_tick' );
         }
@@ -28,13 +33,114 @@ class Sync_Manager {
 
     public function cron_tick() {
         $this->logger->info( 'cron', 'tick' );
-        global $wpdb;
-        $leagues = $wpdb->get_results( "SELECT ext_id, season_current FROM {$wpdb->prefix}tsdb_leagues" );
-        foreach ( $leagues as $league ) {
-            if ( ! empty( $league->season_current ) ) {
-                $this->sync_events( $league->ext_id, $league->season_current );
+        $this->update_active_leagues();
+        $now = time();
+        foreach ( $this->active_leagues as $ext_id ) {
+            $next = $this->next_runs[ $ext_id ] ?? 0;
+            if ( $next <= $now ) {
+                $this->schedule_next_sync( $ext_id );
             }
         }
+    }
+
+    protected function update_active_leagues() {
+        global $wpdb;
+        $start = gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS );
+        $end   = gmdate( 'Y-m-d H:i:s', time() + 14 * DAY_IN_SECONDS );
+        $events = $wpdb->prefix . 'tsdb_events';
+        $leagues = $wpdb->prefix . 'tsdb_leagues';
+        $rows = $wpdb->get_col( $wpdb->prepare(
+            "SELECT DISTINCT l.ext_id FROM {$events} e JOIN {$leagues} l ON e.league_id = l.id\n"
+            . "WHERE ( e.utc_start BETWEEN %s AND %s ) OR e.status IN ('live','inplay')",
+            $start,
+            $end
+        ) );
+        $this->active_leagues = $rows;
+        update_option( 'tsdb_active_leagues', $rows );
+        foreach ( array_keys( $this->next_runs ) as $key ) {
+            if ( ! in_array( $key, $rows, true ) ) {
+                unset( $this->next_runs[ $key ] );
+            }
+        }
+        update_option( 'tsdb_sync_next_runs', $this->next_runs );
+    }
+
+    protected function schedule_next_sync( $league_ext_id ) {
+        global $wpdb;
+        $now      = time();
+        $interval = DAY_IN_SECONDS;
+        $events   = $wpdb->prefix . 'tsdb_events';
+        $leagues  = $wpdb->prefix . 'tsdb_leagues';
+        $live = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$events} e JOIN {$leagues} l ON e.league_id = l.id\n"
+            . "WHERE l.ext_id = %s AND e.status IN ('live','inplay')",
+            $league_ext_id
+        ) );
+        if ( $live ) {
+            $interval = rand( 30, 60 );
+        } else {
+            $today_start = gmdate( 'Y-m-d 00:00:00', $now );
+            $today_end   = gmdate( 'Y-m-d 23:59:59', $now );
+            $today = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$events} e JOIN {$leagues} l ON e.league_id = l.id\n"
+                . "WHERE l.ext_id = %s AND e.utc_start BETWEEN %s AND %s",
+                $league_ext_id,
+                $today_start,
+                $today_end
+            ) );
+            if ( $today ) {
+                $interval = 10 * MINUTE_IN_SECONDS;
+            } else {
+                $future  = gmdate( 'Y-m-d H:i:s', $now + 14 * DAY_IN_SECONDS );
+                $upcoming = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$events} e JOIN {$leagues} l ON e.league_id = l.id\n"
+                    . "WHERE l.ext_id = %s AND e.utc_start BETWEEN %s AND %s",
+                    $league_ext_id,
+                    gmdate( 'Y-m-d H:i:s', $now ),
+                    $future
+                ) );
+                if ( $upcoming ) {
+                    $interval = HOUR_IN_SECONDS;
+                } else {
+                    $finished = $wpdb->get_var( $wpdb->prepare(
+                        "SELECT COUNT(*) FROM {$events} e JOIN {$leagues} l ON e.league_id = l.id\n"
+                        . "WHERE l.ext_id = %s AND e.status = 'finished' AND e.utc_start >= %s",
+                        $league_ext_id,
+                        gmdate( 'Y-m-d H:i:s', $now - DAY_IN_SECONDS )
+                    ) );
+                    if ( $finished ) {
+                        $interval = HOUR_IN_SECONDS;
+                    } else {
+                        $idx = array_search( $league_ext_id, $this->active_leagues, true );
+                        if ( false !== $idx ) {
+                            unset( $this->active_leagues[ $idx ] );
+                            update_option( 'tsdb_active_leagues', $this->active_leagues );
+                        }
+                        unset( $this->next_runs[ $league_ext_id ] );
+                        update_option( 'tsdb_sync_next_runs', $this->next_runs );
+                        return;
+                    }
+                }
+            }
+        }
+        $timestamp = $now + $interval;
+        $this->next_runs[ $league_ext_id ] = $timestamp;
+        update_option( 'tsdb_sync_next_runs', $this->next_runs );
+        if ( ! wp_next_scheduled( 'tsdb_sync_league', [ $league_ext_id ] ) ) {
+            wp_schedule_single_event( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
+        }
+    }
+
+    public function run_league_sync( $league_ext_id ) {
+        global $wpdb;
+        $season = $wpdb->get_var( $wpdb->prepare(
+            "SELECT season_current FROM {$wpdb->prefix}tsdb_leagues WHERE ext_id = %s",
+            $league_ext_id
+        ) );
+        if ( $season ) {
+            $this->sync_events( $league_ext_id, $season );
+        }
+        $this->schedule_next_sync( $league_ext_id );
     }
 
     /**
