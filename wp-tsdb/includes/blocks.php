@@ -28,6 +28,14 @@ function register_blocks() {
         true
     );
 
+    wp_register_script(
+        'tsdb-live-standings',
+        TSDB_URL . 'blocks/live-standings.js',
+        [],
+        TSDB_VERSION,
+        true
+    );
+
     if ( function_exists( 'register_block_type' ) ) {
         register_block_type( 'tsdb/live-fixtures', [
             'editor_script' => 'tsdb-live-fixtures',
@@ -39,6 +47,12 @@ function register_blocks() {
             'editor_script' => 'tsdb-live-event',
             'script'        => 'tsdb-live-event',
             'render_callback' => __NAMESPACE__ . '\\render_live_event_block',
+        ] );
+
+        register_block_type( 'tsdb/live-standings', [
+            'editor_script' => 'tsdb-live-standings',
+            'script'        => 'tsdb-live-standings',
+            'render_callback' => __NAMESPACE__ . '\\render_live_standings_block',
         ] );
     }
 }
@@ -74,4 +88,22 @@ function render_live_event_block( $attributes = [] ) {
         'status' => $status,
     ];
     return '<div class="tsdb-live-event" data-tsdb="' . esc_attr( wp_json_encode( $data ) ) . '"></div>';
+}
+
+/**
+ * Server-side render callback for live standings block.
+ *
+ * @param array $attributes Block attributes.
+ * @return string HTML markup for block container.
+ */
+function render_live_standings_block( $attributes = [] ) {
+    $league = isset( $attributes['league'] ) ? intval( $attributes['league'] ) : 0;
+    $season = isset( $attributes['season'] ) ? sanitize_text_field( $attributes['season'] ) : '';
+    $status = isset( $attributes['status'] ) ? sanitize_text_field( $attributes['status'] ) : 'live';
+    $data   = [
+        'league' => $league,
+        'season' => $season,
+        'status' => $status,
+    ];
+    return '<div class="tsdb-live-standings" data-tsdb="' . esc_attr( wp_json_encode( $data ) ) . '"></div>';
 }
