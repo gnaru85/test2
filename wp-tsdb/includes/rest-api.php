@@ -14,6 +14,8 @@ class Rest_API {
     const TTL_FIXTURE_FINISHED  = HOUR_IN_SECONDS;
     const TTL_STANDINGS = 10 * MINUTE_IN_SECONDS;
     const TTL_TEAM      = DAY_IN_SECONDS;
+    const TTL_PLAYER    = DAY_IN_SECONDS;
+    const TTL_PLAYERS   = HOUR_IN_SECONDS;
     const TTL_EVENT     = 10 * MINUTE_IN_SECONDS;
     const TTL_H2H       = DAY_IN_SECONDS;
     const TTL_TV        = HOUR_IN_SECONDS;
@@ -97,6 +99,32 @@ class Rest_API {
                 'args'     => [
                     'id' => [
                         'description'       => 'Team external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
+            register_rest_route( 'tsdb/v1', '/player/(?P<id>\d+)', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_player' ],
+                'permission_callback' => [ $this, 'permissions_check' ],
+                'args'     => [
+                    'id' => [
+                        'description'       => 'Player external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
+            register_rest_route( 'tsdb/v1', '/players', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_players' ],
+                'permission_callback' => [ $this, 'permissions_check' ],
+                'args'     => [
+                    'team' => [
+                        'description'       => 'Team internal ID.',
                         'type'              => 'integer',
                         'required'          => true,
                         'sanitize_callback' => 'absint',
@@ -400,6 +428,90 @@ class Rest_API {
             return $b['total'] <=> $a['total'];
         } );
         return array_values( $stats );
+    }
+
+    /**
+     * Retrieve a player, using local DB with API fallback.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response|\WP_Error
+     */
+    public function get_player( $request ) {
+        global $wpdb;
+        $id        = absint( $request['id'] );
+        $cache_key = 'player_' . $id;
+        $data      = $this->cache->get( $cache_key );
+        if ( false === $data ) {
+            $table = $wpdb->prefix . 'tsdb_players';
+            $row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE ext_id = %s", $id ), ARRAY_A );
+            if ( $row ) {
+                $data = $row;
+            } else {
+                $res = $this->api->get( '/lookupplayer.php', [ 'id' => $id ] );
+                if ( is_wp_error( $res ) ) {
+                    return $res;
+                }
+                $data = $res['players'][0] ?? null;
+            }
+            $this->cache->set( $cache_key, $data, self::TTL_PLAYER );
+        }
+        if ( $data ) {
+            $ext_id   = is_array( $data ) ? ( $data['ext_id'] ?? ( $data['idPlayer'] ?? '' ) ) : '';
+            $thumb_id = $wpdb->get_var( $wpdb->prepare( "SELECT thumb_id FROM {$wpdb->prefix}tsdb_players WHERE ext_id = %s", $ext_id ) );
+            $data['thumb_url'] = $thumb_id ? wp_get_attachment_url( $thumb_id ) : null;
+        }
+        return $this->etag_response( $request, $data );
+    }
+
+    /**
+     * Retrieve players for a team from local DB, with API fallback.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response|\WP_Error
+     */
+    public function get_players( $request ) {
+        global $wpdb;
+        $team_id  = absint( $request->get_param( 'team' ) );
+        $cache_key = 'players_' . $team_id;
+        $rows      = $this->cache->get( $cache_key );
+        if ( false === $rows ) {
+            $table = $wpdb->prefix . 'tsdb_players';
+            $rows  = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE team_id=%d ORDER BY name", $team_id ), ARRAY_A );
+            if ( ! $rows ) {
+                $ext_id = $wpdb->get_var( $wpdb->prepare( "SELECT ext_id FROM {$wpdb->prefix}tsdb_teams WHERE id=%d", $team_id ) );
+                if ( $ext_id ) {
+                    $res = $this->api->get( '/lookup_all_players.php', [ 'id' => $ext_id ] );
+                    if ( is_wp_error( $res ) ) {
+                        return $res;
+                    }
+                    $rows = $res['player'] ?? [];
+                } else {
+                    $rows = [];
+                }
+            }
+            $this->cache->set( $cache_key, $rows, self::TTL_PLAYERS );
+        }
+        $ext_ids = [];
+        foreach ( $rows as $r ) {
+            $ext_ids[] = $r['ext_id'] ?? ( $r['idPlayer'] ?? null );
+        }
+        $ext_ids   = array_filter( array_unique( $ext_ids ) );
+        $thumb_map = [];
+        if ( $ext_ids ) {
+            $placeholders = implode( ',', array_fill( 0, count( $ext_ids ), '%s' ) );
+            $sql          = $wpdb->prepare( "SELECT ext_id, thumb_id FROM {$wpdb->prefix}tsdb_players WHERE ext_id IN ($placeholders)", $ext_ids );
+            $results      = $wpdb->get_results( $sql );
+            foreach ( $results as $r ) {
+                $thumb_map[ $r->ext_id ] = $r->thumb_id;
+            }
+        }
+        foreach ( $rows as &$r ) {
+            $ext      = $r['ext_id'] ?? ( $r['idPlayer'] ?? '' );
+            $thumb_id = $r['thumb_id'] ?? ( $thumb_map[ $ext ] ?? 0 );
+            $r['thumb_url'] = $thumb_id ? wp_get_attachment_url( $thumb_id ) : null;
+        }
+        unset( $r );
+        return $this->etag_response( $request, $rows );
     }
 
     /**
