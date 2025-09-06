@@ -38,6 +38,7 @@ spl_autoload_register( function ( $class ) {
 } );
 
 // Load procedural includes.
+require_once TSDB_PATH . 'includes/crypto.php';
 require_once TSDB_PATH . 'includes/blocks.php';
 require_once TSDB_PATH . 'includes/shortcodes.php';
 
@@ -239,6 +240,10 @@ function tsdb_activate() {
     foreach ( $tables as $sql ) {
         dbDelta( $sql );
     }
+
+    add_option( 'tsdb_api_key', '', '', 'no' );
+    add_option( 'tsdb_default_sport', 'soccer', '', 'no' );
+    add_option( 'tsdb_live_poll', 30, '', 'no' );
 }
 register_activation_hook( __FILE__, 'tsdb_activate' );
 

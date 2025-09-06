@@ -1,8 +1,9 @@
 (function(){
     const apiBase = (window.wpApiSettings ? window.wpApiSettings.root : '/wp-json/') + 'tsdb/v1/';
+    const nonce = window.wpApiSettings ? window.wpApiSettings.nonce : '';
 
     function renderEvent(el, eventId){
-        fetch(apiBase + 'event/' + eventId)
+        fetch(apiBase + 'event/' + eventId, { headers: { 'X-WP-Nonce': nonce } })
             .then(r => r.json())
             .then(data => {
                 if(!data){ return; }

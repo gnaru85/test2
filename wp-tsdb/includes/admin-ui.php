@@ -31,9 +31,47 @@ class Admin_UI {
     }
 
     public function register_settings() {
-        register_setting( 'tsdb', 'tsdb_api_key', [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'show_in_rest' => false ] );
-        register_setting( 'tsdb', 'tsdb_default_sport', [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'soccer' ] );
-        register_setting( 'tsdb', 'tsdb_live_poll', [ 'type' => 'integer', 'sanitize_callback' => 'absint', 'default' => 30 ] );
+        register_setting( 'tsdb', 'tsdb_api_key', [
+            'type'              => 'string',
+            'sanitize_callback' => [ $this, 'sanitize_api_key' ],
+            'show_in_rest'      => false,
+        ] );
+        register_setting( 'tsdb', 'tsdb_default_sport', [
+            'type'              => 'string',
+            'sanitize_callback' => [ $this, 'sanitize_default_sport' ],
+            'default'           => 'soccer',
+        ] );
+        register_setting( 'tsdb', 'tsdb_live_poll', [
+            'type'              => 'integer',
+            'sanitize_callback' => [ $this, 'sanitize_live_poll' ],
+            'default'           => 30,
+        ] );
+    }
+
+    public function sanitize_api_key( $value ) {
+        $value = sanitize_text_field( $value );
+        if ( '' === $value ) {
+            delete_option( 'tsdb_api_key' );
+            return '';
+        }
+        $encrypted = tsdb_encrypt( $value );
+        delete_option( 'tsdb_api_key' );
+        add_option( 'tsdb_api_key', $encrypted, '', 'no' );
+        return $encrypted;
+    }
+
+    public function sanitize_default_sport( $value ) {
+        $value = sanitize_text_field( $value ?: 'soccer' );
+        delete_option( 'tsdb_default_sport' );
+        add_option( 'tsdb_default_sport', $value, '', 'no' );
+        return $value;
+    }
+
+    public function sanitize_live_poll( $value ) {
+        $value = absint( $value );
+        delete_option( 'tsdb_live_poll' );
+        add_option( 'tsdb_live_poll', $value, '', 'no' );
+        return $value;
     }
 
     public function enqueue_scripts( $hook ) {
@@ -49,6 +87,9 @@ class Admin_UI {
 
     public function ajax_sync_leagues() {
         check_ajax_referer( 'tsdb_sync' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Unauthorized', 'tsdb' ), 403 );
+        }
         $country = sanitize_text_field( $_POST['country'] ?? '' );
         $sport   = sanitize_text_field( $_POST['sport'] ?? '' );
         $count   = $this->sync_manager->sync_leagues( $country, $sport );
@@ -60,6 +101,9 @@ class Admin_UI {
 
     public function ajax_seed() {
         check_ajax_referer( 'tsdb_sync' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Unauthorized', 'tsdb' ), 403 );
+        }
         $league = sanitize_text_field( $_POST['league'] ?? '' );
         $season = sanitize_text_field( $_POST['season'] ?? '' );
         $this->sync_manager->sync_seasons( $league );
@@ -73,6 +117,9 @@ class Admin_UI {
 
     public function ajax_delta() {
         check_ajax_referer( 'tsdb_sync' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Unauthorized', 'tsdb' ), 403 );
+        }
         $league = sanitize_text_field( $_POST['league'] ?? '' );
         $season = sanitize_text_field( $_POST['season'] ?? '' );
         $count  = $this->sync_manager->sync_events( $league, $season );
@@ -91,7 +138,7 @@ class Admin_UI {
                 <table class="form-table" role="presentation">
                     <tr>
                         <th scope="row"><label for="tsdb_api_key">API Key</label></th>
-                        <td><input name="tsdb_api_key" type="text" id="tsdb_api_key" value="<?php echo esc_attr( get_option( 'tsdb_api_key', '' ) ); ?>" class="regular-text"></td>
+                        <td><input name="tsdb_api_key" type="text" id="tsdb_api_key" value="<?php echo esc_attr( tsdb_get_api_key() ); ?>" class="regular-text"></td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="tsdb_default_sport">Default Sport</label></th>

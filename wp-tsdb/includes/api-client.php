@@ -32,7 +32,7 @@ class Api_Client {
      * @return array|WP_Error
      */
     public function get( $endpoint, $params = [], $v2 = false ) {
-        $key = get_option( 'tsdb_api_key' );
+        $key = \tsdb_get_api_key();
         if ( empty( $key ) ) {
             return new \WP_Error( 'tsdb_no_key', __( 'API key not set', 'tsdb' ) );
         }

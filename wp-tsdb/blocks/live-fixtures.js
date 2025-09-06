@@ -1,11 +1,12 @@
 (function(){
     const apiBase = (window.wpApiSettings ? window.wpApiSettings.root : '/wp-json/') + 'tsdb/v1/';
+    const nonce = window.wpApiSettings ? window.wpApiSettings.nonce : '';
 
     function renderFixtures(el, league, status){
         const params = new URLSearchParams();
         if(league){ params.append('league', league); }
         if(status){ params.append('status', status); }
-        fetch(apiBase + 'fixtures?' + params.toString())
+        fetch(apiBase + 'fixtures?' + params.toString(), { headers: { 'X-WP-Nonce': nonce } })
             .then(r => r.json())
             .then(data => {
                 el.innerHTML = '';
