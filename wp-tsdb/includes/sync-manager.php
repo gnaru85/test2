@@ -388,6 +388,9 @@ class Sync_Manager {
             $this->cache->delete( 'fixtures_' . $league_id . '_finished' );
             $this->cache->delete( 'live_' . $league_id );
             $this->cache->delete( 'live_all' );
+            // League standings depend on finished events.
+            // Purge cached standings so they can be recalculated on next request.
+            $this->cache->delete( 'standings_' . $league_ext_id . '_' . $season );
         }
         return $count;
     }
