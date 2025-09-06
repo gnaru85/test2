@@ -40,6 +40,7 @@ spl_autoload_register( function ( $class ) {
 // Load procedural includes.
 require_once TSDB_PATH . 'includes/blocks.php';
 require_once TSDB_PATH . 'includes/shortcodes.php';
+require_once TSDB_PATH . 'includes/cpts.php';
 
 /**
  * Initialize plugin services.

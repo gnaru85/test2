@@ -278,19 +278,105 @@ class Rest_API {
      * @return \WP_REST_Response|\WP_Error
      */
     public function get_standings( $request ) {
-        $league = absint( $request->get_param( 'league' ) );
-        $season = sanitize_text_field( $request->get_param( 'season' ) );
+        $league    = absint( $request->get_param( 'league' ) );
+        $season    = sanitize_text_field( $request->get_param( 'season' ) );
         $cache_key = 'standings_' . $league . '_' . $season;
         $data      = $this->cache->get( $cache_key );
         if ( false === $data ) {
             $res = $this->api->get( '/lookuptable.php', [ 'l' => $league, 's' => $season ] );
-            if ( is_wp_error( $res ) ) {
-                return $res;
+            if ( ! is_wp_error( $res ) && ! empty( $res['table'] ) ) {
+                $data = $res['table'];
+            } else {
+                $data = $this->compute_standings( $league, $season );
             }
-            $data = $res['table'] ?? [];
             $this->cache->set( $cache_key, $data, self::TTL_STANDINGS );
         }
         return $this->etag_response( $request, $data );
+    }
+
+    /**
+     * Compute standings from local event data when API lacks info.
+     *
+     * @param int    $league_ext_id External league ID.
+     * @param string $season_name    Season identifier.
+     * @return array
+     */
+    protected function compute_standings( $league_ext_id, $season_name ) {
+        global $wpdb;
+        $league_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$wpdb->prefix}tsdb_leagues WHERE ext_id = %s", $league_ext_id ) );
+        if ( ! $league_id ) {
+            return [];
+        }
+        if ( ! $season_name ) {
+            $season_name = $wpdb->get_var( $wpdb->prepare( "SELECT season_current FROM {$wpdb->prefix}tsdb_leagues WHERE id = %d", $league_id ) );
+        }
+        $season_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$wpdb->prefix}tsdb_seasons WHERE league_id = %d AND name = %s", $league_id, $season_name ) );
+        if ( ! $season_id ) {
+            return [];
+        }
+        $teams_table  = $wpdb->prefix . 'tsdb_teams';
+        $events_table = $wpdb->prefix . 'tsdb_events';
+        $teams = $wpdb->get_results( $wpdb->prepare( "SELECT id, ext_id, name FROM {$teams_table} WHERE league_id = %d", $league_id ), ARRAY_A );
+        if ( ! $teams ) {
+            return [];
+        }
+        $stats = [];
+        foreach ( $teams as $t ) {
+            $stats[ (int) $t['id'] ] = [
+                'teamid'         => $t['ext_id'],
+                'name'           => $t['name'],
+                'played'         => 0,
+                'win'            => 0,
+                'loss'           => 0,
+                'draw'           => 0,
+                'goalsfor'       => 0,
+                'goalsagainst'   => 0,
+                'goalsdifference'=> 0,
+                'total'          => 0,
+            ];
+        }
+        $rows = $wpdb->get_results( $wpdb->prepare( "SELECT home_id, away_id, home_score, away_score FROM {$events_table} WHERE league_id = %d AND season_id = %d AND status = 'finished' AND home_score IS NOT NULL AND away_score IS NOT NULL", $league_id, $season_id ) );
+        foreach ( $rows as $row ) {
+            if ( ! isset( $stats[ $row->home_id ] ) || ! isset( $stats[ $row->away_id ] ) ) {
+                continue;
+            }
+            $home = &$stats[ $row->home_id ];
+            $away = &$stats[ $row->away_id ];
+            $home['played']++;
+            $away['played']++;
+            $home['goalsfor']     += (int) $row->home_score;
+            $home['goalsagainst'] += (int) $row->away_score;
+            $away['goalsfor']     += (int) $row->away_score;
+            $away['goalsagainst'] += (int) $row->home_score;
+            if ( $row->home_score > $row->away_score ) {
+                $home['win']++;
+                $away['loss']++;
+                $home['total'] += 3;
+            } elseif ( $row->home_score < $row->away_score ) {
+                $away['win']++;
+                $home['loss']++;
+                $away['total'] += 3;
+            } else {
+                $home['draw']++;
+                $away['draw']++;
+                $home['total']++;
+                $away['total']++;
+            }
+        }
+        foreach ( $stats as &$s ) {
+            $s['goalsdifference'] = $s['goalsfor'] - $s['goalsagainst'];
+        }
+        unset( $s );
+        usort( $stats, function ( $a, $b ) {
+            if ( $a['total'] === $b['total'] ) {
+                if ( $a['goalsdifference'] === $b['goalsdifference'] ) {
+                    return $b['goalsfor'] <=> $a['goalsfor'];
+                }
+                return $b['goalsdifference'] <=> $a['goalsdifference'];
+            }
+            return $b['total'] <=> $a['total'];
+        } );
+        return array_values( $stats );
     }
 
     /**
@@ -358,13 +444,40 @@ class Rest_API {
         global $wpdb;
         $team1 = absint( $request->get_param( 'team1' ) );
         $team2 = absint( $request->get_param( 'team2' ) );
-        $table = $wpdb->prefix . 'tsdb_events';
+        $table     = $wpdb->prefix . 'tsdb_events';
         $cache_key = 'h2h_' . $team1 . '_' . $team2;
-        $rows      = $this->cache->get( $cache_key );
-        if ( false === $rows ) {
-            $sql  = $wpdb->prepare( "SELECT * FROM {$table} WHERE (home_id=%d AND away_id=%d) OR (home_id=%d AND away_id=%d) ORDER BY utc_start DESC", $team1, $team2, $team2, $team1 );
-            $rows = $wpdb->get_results( $sql );
-            $this->cache->set( $cache_key, $rows, self::TTL_H2H );
+        $payload   = $this->cache->get( $cache_key );
+        if ( false === $payload ) {
+            $sql    = $wpdb->prepare( "SELECT * FROM {$table} WHERE (home_id=%d AND away_id=%d) OR (home_id=%d AND away_id=%d) ORDER BY utc_start DESC", $team1, $team2, $team2, $team1 );
+            $rows   = $wpdb->get_results( $sql );
+            $summary = [
+                $team1 => [ 'wins' => 0, 'losses' => 0, 'draws' => 0, 'for' => 0, 'against' => 0 ],
+                $team2 => [ 'wins' => 0, 'losses' => 0, 'draws' => 0, 'for' => 0, 'against' => 0 ],
+            ];
+            foreach ( $rows as $r ) {
+                if ( null === $r->home_score || null === $r->away_score ) {
+                    continue;
+                }
+                $summary[ $r->home_id ]['for']     += (int) $r->home_score;
+                $summary[ $r->home_id ]['against'] += (int) $r->away_score;
+                $summary[ $r->away_id ]['for']     += (int) $r->away_score;
+                $summary[ $r->away_id ]['against'] += (int) $r->home_score;
+                if ( $r->home_score > $r->away_score ) {
+                    $summary[ $r->home_id ]['wins']++;
+                    $summary[ $r->away_id ]['losses']++;
+                } elseif ( $r->home_score < $r->away_score ) {
+                    $summary[ $r->away_id ]['wins']++;
+                    $summary[ $r->home_id ]['losses']++;
+                } else {
+                    $summary[ $r->home_id ]['draws']++;
+                    $summary[ $r->away_id ]['draws']++;
+                }
+            }
+            $payload = [ 'matches' => $rows, 'summary' => $summary ];
+            $this->cache->set( $cache_key, $payload, self::TTL_H2H );
+        } else {
+            $rows    = $payload['matches'];
+            $summary = $payload['summary'];
         }
         $team_ids = [];
         foreach ( $rows as $row ) {
@@ -386,7 +499,8 @@ class Rest_API {
             $row->home_badge = isset( $badges[ $row->home_id ] ) && $badges[ $row->home_id ] ? wp_get_attachment_url( $badges[ $row->home_id ] ) : null;
             $row->away_badge = isset( $badges[ $row->away_id ] ) && $badges[ $row->away_id ] ? wp_get_attachment_url( $badges[ $row->away_id ] ) : null;
         }
-        return $this->etag_response( $request, $rows );
+        $payload['matches'] = $rows;
+        return $this->etag_response( $request, $payload );
     }
 
     /**
