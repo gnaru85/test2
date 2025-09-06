@@ -20,7 +20,6 @@ class Rest_API {
     const TTL_H2H       = DAY_IN_SECONDS;
     const TTL_TV        = HOUR_IN_SECONDS;
     const TTL_LINEUP    = 10 * MINUTE_IN_SECONDS;
-    const TTL_TRANSFERS = DAY_IN_SECONDS;
 
     public function __construct( Api_Client $api, Cache_Store $cache ) {
         $this->api   = $api;
@@ -153,19 +152,6 @@ class Rest_API {
                 'args'     => [
                     'id' => [
                         'description'       => 'Event external ID.',
-                        'type'              => 'integer',
-                        'required'          => true,
-                        'sanitize_callback' => 'absint',
-                    ],
-                ],
-            ] );
-            register_rest_route( 'tsdb/v1', '/player/(?P<id>\\d+)/transfers', [
-                'methods'  => 'GET',
-                'callback' => [ $this, 'get_transfers' ],
-                'permission_callback' => [ $this, 'permissions_check_public' ],
-                'args'     => [
-                    'id' => [
-                        'description'       => 'Player external ID.',
                         'type'              => 'integer',
                         'required'          => true,
                         'sanitize_callback' => 'absint',
@@ -520,27 +506,6 @@ class Rest_API {
                 $data = [];
             }
             $this->cache->set( $cache_key, $data, self::TTL_PLAYERS );
-        }
-        return $this->etag_response( $request, $data );
-    }
-
-    /**
-     * Retrieve transfer history for a player.
-     *
-     * @param \WP_REST_Request $request Request object.
-     * @return \WP_REST_Response|\WP_Error
-     */
-    public function get_transfers( $request ) {
-        $id        = absint( $request['id'] );
-        $cache_key = 'transfers_' . $id;
-        $data      = $this->cache->get( $cache_key );
-        if ( false === $data ) {
-            $res = $this->api->player_transfers( $id );
-            if ( is_wp_error( $res ) ) {
-                return $res;
-            }
-            $data = $res['transfers'] ?? [];
-            $this->cache->set( $cache_key, $data, self::TTL_TRANSFERS );
         }
         return $this->etag_response( $request, $data );
     }
