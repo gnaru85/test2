@@ -311,6 +311,11 @@ class Rest_API {
             $data = $res['teams'][0] ?? null;
             $this->cache->set( $cache_key, $data, self::TTL_TEAM );
         }
+        if ( $data ) {
+            global $wpdb;
+            $badge_id = $wpdb->get_var( $wpdb->prepare( "SELECT badge_id FROM {$wpdb->prefix}tsdb_teams WHERE ext_id = %s", $data['idTeam'] ?? '' ) );
+            $data['badge_url'] = $badge_id ? wp_get_attachment_url( $badge_id ) : null;
+        }
         return $this->etag_response( $request, $data );
     }
 
@@ -332,6 +337,14 @@ class Rest_API {
             $data = $res['events'][0] ?? null;
             $this->cache->set( $cache_key, $data, self::TTL_EVENT );
         }
+        if ( $data ) {
+            global $wpdb;
+            $team_table    = $wpdb->prefix . 'tsdb_teams';
+            $home_badge_id = $wpdb->get_var( $wpdb->prepare( "SELECT badge_id FROM {$team_table} WHERE ext_id = %s", $data['idHomeTeam'] ?? '' ) );
+            $away_badge_id = $wpdb->get_var( $wpdb->prepare( "SELECT badge_id FROM {$team_table} WHERE ext_id = %s", $data['idAwayTeam'] ?? '' ) );
+            $data['home_badge'] = $home_badge_id ? wp_get_attachment_url( $home_badge_id ) : null;
+            $data['away_badge'] = $away_badge_id ? wp_get_attachment_url( $away_badge_id ) : null;
+        }
         return $this->etag_response( $request, $data );
     }
 
@@ -352,6 +365,26 @@ class Rest_API {
             $sql  = $wpdb->prepare( "SELECT * FROM {$table} WHERE (home_id=%d AND away_id=%d) OR (home_id=%d AND away_id=%d) ORDER BY utc_start DESC", $team1, $team2, $team2, $team1 );
             $rows = $wpdb->get_results( $sql );
             $this->cache->set( $cache_key, $rows, self::TTL_H2H );
+        }
+        $team_ids = [];
+        foreach ( $rows as $row ) {
+            $team_ids[] = $row->home_id;
+            $team_ids[] = $row->away_id;
+        }
+        $team_ids = array_unique( array_map( 'intval', $team_ids ) );
+        $badges   = [];
+        if ( $team_ids ) {
+            $placeholders = implode( ',', array_fill( 0, count( $team_ids ), '%d' ) );
+            $team_table   = $wpdb->prefix . 'tsdb_teams';
+            $sql          = $wpdb->prepare( "SELECT id, badge_id FROM {$team_table} WHERE id IN ($placeholders)", $team_ids );
+            $results      = $wpdb->get_results( $sql );
+            foreach ( $results as $r ) {
+                $badges[ $r->id ] = $r->badge_id;
+            }
+        }
+        foreach ( $rows as $row ) {
+            $row->home_badge = isset( $badges[ $row->home_id ] ) && $badges[ $row->home_id ] ? wp_get_attachment_url( $badges[ $row->home_id ] ) : null;
+            $row->away_badge = isset( $badges[ $row->away_id ] ) && $badges[ $row->away_id ] ? wp_get_attachment_url( $badges[ $row->away_id ] ) : null;
         }
         return $this->etag_response( $request, $rows );
     }
