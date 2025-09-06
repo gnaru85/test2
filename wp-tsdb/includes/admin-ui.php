@@ -18,6 +18,8 @@ class Admin_UI {
         add_action( 'admin_init', [ $this, 'register_settings' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
         add_action( 'wp_ajax_tsdb_sync_leagues', [ $this, 'ajax_sync_leagues' ] );
+        add_action( 'wp_ajax_tsdb_seed', [ $this, 'ajax_seed' ] );
+        add_action( 'wp_ajax_tsdb_delta', [ $this, 'ajax_delta' ] );
     }
 
     public function register_menu() {
@@ -52,6 +54,30 @@ class Admin_UI {
         wp_send_json_success( [ 'message' => sprintf( __( '%d leagues synced', 'tsdb' ), $count ) ] );
     }
 
+    public function ajax_seed() {
+        check_ajax_referer( 'tsdb_sync' );
+        $league = sanitize_text_field( $_POST['league'] ?? '' );
+        $season = sanitize_text_field( $_POST['season'] ?? '' );
+        $this->sync_manager->sync_seasons( $league );
+        $this->sync_manager->sync_teams( $league );
+        $count = $this->sync_manager->sync_events( $league, $season );
+        if ( is_wp_error( $count ) ) {
+            wp_send_json_error( $count->get_error_message() );
+        }
+        wp_send_json_success( [ 'message' => sprintf( __( '%d events seeded', 'tsdb' ), $count ) ] );
+    }
+
+    public function ajax_delta() {
+        check_ajax_referer( 'tsdb_sync' );
+        $league = sanitize_text_field( $_POST['league'] ?? '' );
+        $season = sanitize_text_field( $_POST['season'] ?? '' );
+        $count  = $this->sync_manager->sync_events( $league, $season );
+        if ( is_wp_error( $count ) ) {
+            wp_send_json_error( $count->get_error_message() );
+        }
+        wp_send_json_success( [ 'message' => sprintf( __( '%d events refreshed', 'tsdb' ), $count ) ] );
+    }
+
     public function settings_page() {
         ?>
         <div class="wrap">
@@ -81,6 +107,8 @@ class Admin_UI {
                 <select id="tsdb_league"></select>
                 <select id="tsdb_season"></select>
                 <button id="tsdb_sync_btn" class="button button-primary"><?php esc_html_e( 'Sync Selected', 'tsdb' ); ?></button>
+                <button id="tsdb_seed_btn" class="button"><?php esc_html_e( 'Seed League', 'tsdb' ); ?></button>
+                <button id="tsdb_delta_btn" class="button"><?php esc_html_e( 'Refresh Events', 'tsdb' ); ?></button>
             </div>
         </div>
         <?php
