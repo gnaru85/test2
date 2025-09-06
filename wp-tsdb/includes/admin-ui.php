@@ -22,6 +22,9 @@ class Admin_UI {
         add_action( 'wp_ajax_tsdb_sync_leagues', [ $this, 'ajax_sync_leagues' ] );
         add_action( 'wp_ajax_tsdb_seed', [ $this, 'ajax_seed' ] );
         add_action( 'wp_ajax_tsdb_delta', [ $this, 'ajax_delta' ] );
+        add_action( 'wp_ajax_tsdb_clear_cache', [ $this, 'ajax_clear_cache' ] );
+        add_action( 'wp_ajax_tsdb_clear_logs', [ $this, 'ajax_clear_logs' ] );
+        add_action( 'wp_ajax_tsdb_delete_all_data', [ $this, 'ajax_delete_all_data' ] );
     }
 
     public function register_menu() {
@@ -135,6 +138,43 @@ class Admin_UI {
         wp_send_json_success( [ 'message' => sprintf( __( '%d events refreshed', 'tsdb' ), $count ) ] );
     }
 
+    public function ajax_clear_cache() {
+        check_ajax_referer( 'tsdb_sync' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Unauthorized', 'tsdb' ), 403 );
+        }
+        $cache = new Cache_Store();
+        $cache->flush();
+        wp_send_json_success( [ 'message' => __( 'Cache cleared', 'tsdb' ) ] );
+    }
+
+    public function ajax_clear_logs() {
+        check_ajax_referer( 'tsdb_sync' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Unauthorized', 'tsdb' ), 403 );
+        }
+        global $wpdb;
+        $wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}tsdb_logs" );
+        wp_send_json_success( [ 'message' => __( 'Logs cleared', 'tsdb' ) ] );
+    }
+
+    public function ajax_delete_all_data() {
+        check_ajax_referer( 'tsdb_sync' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Unauthorized', 'tsdb' ), 403 );
+        }
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'tsdb_';
+        $tables = [ 'leagues', 'seasons', 'teams', 'players', 'venues', 'events', 'event_timeline', 'event_stats', 'standings', 'broadcast', 'cache', 'logs' ];
+        foreach ( $tables as $table ) {
+            $wpdb->query( "DROP TABLE IF EXISTS {$prefix}{$table}" );
+        }
+        $cache = new Cache_Store();
+        $cache->flush();
+        \tsdb_activate();
+        wp_send_json_success( [ 'message' => __( 'All data deleted', 'tsdb' ) ] );
+    }
+
     public function settings_page() {
         ?>
         <div class="wrap">
@@ -166,6 +206,12 @@ class Admin_UI {
                 <button id="tsdb_sync_btn" class="button button-primary"><?php esc_html_e( 'Sync Selected', 'tsdb' ); ?></button>
                 <button id="tsdb_seed_btn" class="button"><?php esc_html_e( 'Seed League', 'tsdb' ); ?></button>
                 <button id="tsdb_delta_btn" class="button"><?php esc_html_e( 'Refresh Events', 'tsdb' ); ?></button>
+            </div>
+            <h2><?php esc_html_e( 'Maintenance', 'tsdb' ); ?></h2>
+            <div id="tsdb_maintenance_controls">
+                <button id="tsdb_clear_cache_btn" class="button"><?php esc_html_e( 'Clear Cache', 'tsdb' ); ?></button>
+                <button id="tsdb_clear_logs_btn" class="button"><?php esc_html_e( 'Clear Logs', 'tsdb' ); ?></button>
+                <button id="tsdb_delete_all_btn" class="button"><?php esc_html_e( 'Delete All Data', 'tsdb' ); ?></button>
             </div>
         </div>
         <?php

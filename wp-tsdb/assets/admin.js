@@ -102,5 +102,33 @@
                 alert(resp.data ? resp.data.message : 'Done');
             });
         });
+        $('#tsdb_clear_cache_btn').on('click', function(e){
+            e.preventDefault();
+            $.post(ajaxurl, {
+                action: 'tsdb_clear_cache',
+                _ajax_nonce: tsdbAdmin.nonce
+            }, function(resp){
+                alert(resp.data ? resp.data.message : 'Done');
+            });
+        });
+        $('#tsdb_clear_logs_btn').on('click', function(e){
+            e.preventDefault();
+            $.post(ajaxurl, {
+                action: 'tsdb_clear_logs',
+                _ajax_nonce: tsdbAdmin.nonce
+            }, function(resp){
+                alert(resp.data ? resp.data.message : 'Done');
+            });
+        });
+        $('#tsdb_delete_all_btn').on('click', function(e){
+            e.preventDefault();
+            if(!confirm('Are you sure?')){ return; }
+            $.post(ajaxurl, {
+                action: 'tsdb_delete_all_data',
+                _ajax_nonce: tsdbAdmin.nonce
+            }, function(resp){
+                alert(resp.data ? resp.data.message : 'Done');
+            });
+        });
     });
 })(jQuery);
