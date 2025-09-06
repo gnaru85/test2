@@ -21,6 +21,15 @@ if ( ! defined( 'TSDB_PATH' ) ) {
 if ( ! defined( 'TSDB_URL' ) ) {
     define( 'TSDB_URL', plugin_dir_url( __FILE__ ) );
 }
+if ( ! defined( 'TSDB_AS_GROUP' ) ) {
+    define( 'TSDB_AS_GROUP', 'tsdb' );
+}
+
+// Load Action Scheduler library.
+require_once TSDB_PATH . 'vendor/autoload.php';
+if ( ! class_exists( 'ActionScheduler' ) ) {
+    require_once TSDB_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
+}
 
 // Simple PSR-4 style autoloader for plugin classes.
 spl_autoload_register( function ( $class ) {
@@ -252,7 +261,8 @@ register_activation_hook( __FILE__, 'tsdb_activate' );
  * Deactivation: clear scheduled events.
  */
 function tsdb_deactivate() {
-    wp_clear_scheduled_hook( 'tsdb_cron_tick' );
+    \as_unschedule_all_actions( 'tsdb_cron_tick', [], TSDB_AS_GROUP );
+    \as_unschedule_all_actions( 'tsdb_sync_league', [], TSDB_AS_GROUP );
 }
 register_deactivation_hook( __FILE__, 'tsdb_deactivate' );
 
