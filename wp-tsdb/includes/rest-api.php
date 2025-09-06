@@ -82,6 +82,9 @@ class Rest_API {
             $rows = $wpdb->get_results( $sql );
             $this->cache->set( $cache_key, $rows, self::TTL_LEAGUES );
         }
+        foreach ( $rows as $row ) {
+            $row->logo_url = $row->logo_id ? wp_get_attachment_url( $row->logo_id ) : null;
+        }
         return rest_ensure_response( $rows );
     }
 
@@ -102,6 +105,26 @@ class Rest_API {
                 $ttl = self::TTL_FIXTURE_FINISHED;
             }
             $this->cache->set( $cache_key, $rows, $ttl );
+        }
+        $team_ids = [];
+        foreach ( $rows as $row ) {
+            $team_ids[] = $row->home_id;
+            $team_ids[] = $row->away_id;
+        }
+        $team_ids = array_unique( array_map( 'intval', $team_ids ) );
+        $badges = [];
+        if ( $team_ids ) {
+            $placeholders = implode( ',', array_fill( 0, count( $team_ids ), '%d' ) );
+            $team_table   = $wpdb->prefix . 'tsdb_teams';
+            $sql = $wpdb->prepare( "SELECT id, badge_id FROM {$team_table} WHERE id IN ($placeholders)", $team_ids );
+            $results = $wpdb->get_results( $sql );
+            foreach ( $results as $r ) {
+                $badges[ $r->id ] = $r->badge_id;
+            }
+        }
+        foreach ( $rows as $row ) {
+            $row->home_badge = isset( $badges[ $row->home_id ] ) && $badges[ $row->home_id ] ? wp_get_attachment_url( $badges[ $row->home_id ] ) : null;
+            $row->away_badge = isset( $badges[ $row->away_id ] ) && $badges[ $row->away_id ] ? wp_get_attachment_url( $badges[ $row->away_id ] ) : null;
         }
         return rest_ensure_response( $rows );
     }
