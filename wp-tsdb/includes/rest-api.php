@@ -19,6 +19,9 @@ class Rest_API {
     const TTL_VENUE     = DAY_IN_SECONDS;
     const TTL_H2H       = DAY_IN_SECONDS;
     const TTL_TV        = HOUR_IN_SECONDS;
+    const TTL_LINEUP    = 10 * MINUTE_IN_SECONDS;
+    const TTL_TRANSFERS = DAY_IN_SECONDS;
+    const TTL_HONOURS   = DAY_IN_SECONDS;
 
     public function __construct( Api_Client $api, Cache_Store $cache ) {
         $this->api   = $api;
@@ -71,6 +74,11 @@ class Rest_API {
                         'description'       => 'Internal league ID.',
                         'type'              => 'integer',
                         'sanitize_callback' => 'absint',
+                    ],
+                    'sport'  => [
+                        'description'       => 'Sport slug.',
+                        'type'              => 'string',
+                        'sanitize_callback' => 'sanitize_text_field',
                     ],
                 ],
             ] );
@@ -138,6 +146,45 @@ class Rest_API {
                 'args'     => [
                     'id' => [
                         'description'       => 'Event external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
+            register_rest_route( 'tsdb/v1', '/event/(?P<id>\\d+)/lineup', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_lineup' ],
+                'permission_callback' => [ $this, 'permissions_check_public' ],
+                'args'     => [
+                    'id' => [
+                        'description'       => 'Event external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
+            register_rest_route( 'tsdb/v1', '/player/(?P<id>\\d+)/transfers', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_transfers' ],
+                'permission_callback' => [ $this, 'permissions_check_public' ],
+                'args'     => [
+                    'id' => [
+                        'description'       => 'Player external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
+            register_rest_route( 'tsdb/v1', '/player/(?P<id>\\d+)/honours', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_honours' ],
+                'permission_callback' => [ $this, 'permissions_check_public' ],
+                'args'     => [
+                    'id' => [
+                        'description'       => 'Player external ID.',
                         'type'              => 'integer',
                         'required'          => true,
                         'sanitize_callback' => 'absint',
@@ -295,17 +342,23 @@ class Rest_API {
     public function get_live( $request ) {
         global $wpdb;
         $league   = absint( $request->get_param( 'league' ) );
-        $table    = $wpdb->prefix . 'tsdb_events';
-        $where    = "status IN ('live','inplay')";
+        $sport    = sanitize_text_field( $request->get_param( 'sport' ) );
+        $events   = $wpdb->prefix . 'tsdb_events';
+        $leagues  = $wpdb->prefix . 'tsdb_leagues';
+        $where    = "e.status IN ('live','inplay')";
         $args     = [];
         if ( $league ) {
-            $where .= ' AND league_id=%d';
+            $where .= ' AND e.league_id=%d';
             $args[] = $league;
         }
-        $cache_key = 'live_' . ( $league ? $league : 'all' );
+        if ( $sport ) {
+            $where .= ' AND l.sport=%s';
+            $args[] = $sport;
+        }
+        $cache_key = 'live_' . md5( $league . '_' . $sport );
         $rows      = $this->cache->get( $cache_key );
         if ( false === $rows ) {
-            $sql  = $wpdb->prepare( "SELECT * FROM {$table} WHERE {$where} ORDER BY utc_start ASC", $args );
+            $sql  = $wpdb->prepare( "SELECT e.* FROM {$events} e JOIN {$leagues} l ON e.league_id = l.id WHERE {$where} ORDER BY e.utc_start ASC", $args );
             $rows = $wpdb->get_results( $sql );
             $this->cache->set( $cache_key, $rows, self::TTL_FIXTURE_LIVE );
         }
@@ -497,6 +550,48 @@ class Rest_API {
     }
 
     /**
+     * Retrieve transfer history for a player.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response|\WP_Error
+     */
+    public function get_transfers( $request ) {
+        $id        = absint( $request['id'] );
+        $cache_key = 'transfers_' . $id;
+        $data      = $this->cache->get( $cache_key );
+        if ( false === $data ) {
+            $res = $this->api->player_transfers( $id );
+            if ( is_wp_error( $res ) ) {
+                return $res;
+            }
+            $data = $res['formerteams'] ?? $res['transfers'] ?? [];
+            $this->cache->set( $cache_key, $data, self::TTL_TRANSFERS );
+        }
+        return $this->etag_response( $request, $data );
+    }
+
+    /**
+     * Retrieve honours for a player.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response|\WP_Error
+     */
+    public function get_honours( $request ) {
+        $id        = absint( $request['id'] );
+        $cache_key = 'honours_' . $id;
+        $data      = $this->cache->get( $cache_key );
+        if ( false === $data ) {
+            $res = $this->api->player_honours( $id );
+            if ( is_wp_error( $res ) ) {
+                return $res;
+            }
+            $data = $res['honours'] ?? [];
+            $this->cache->set( $cache_key, $data, self::TTL_HONOURS );
+        }
+        return $this->etag_response( $request, $data );
+    }
+
+    /**
      * Retrieve an event from the API.
      *
      * @param \WP_REST_Request $request Request object.
@@ -535,6 +630,27 @@ class Rest_API {
                 $stats = $wpdb->get_var( $wpdb->prepare( "SELECT stats_json FROM {$stats_tbl} WHERE event_id = %d", $event_id ) );
                 $data['stats'] = $stats ? json_decode( $stats, true ) : null;
             }
+        }
+        return $this->etag_response( $request, $data );
+    }
+
+    /**
+     * Retrieve lineup data for an event.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response|\WP_Error
+     */
+    public function get_lineup( $request ) {
+        $id        = absint( $request['id'] );
+        $cache_key = 'lineup_' . $id;
+        $data      = $this->cache->get( $cache_key );
+        if ( false === $data ) {
+            $res = $this->api->event_lineup( $id );
+            if ( is_wp_error( $res ) ) {
+                return $res;
+            }
+            $data = $res['lineup'] ?? [];
+            $this->cache->set( $cache_key, $data, self::TTL_LINEUP );
         }
         return $this->etag_response( $request, $data );
     }

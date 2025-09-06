@@ -9,17 +9,19 @@ class Sync_Manager {
     protected $logger;
     protected $cache;
     protected $media;
+    protected $scheduler;
     /** @var array<string,int> Timestamp of the next sync for each league */
     protected $next_runs = [];
 
     /** @var array<string> List of leagues currently eligible for polling */
     protected $active_leagues = [];
 
-    public function __construct( Api_Client $api, Logger $logger, Cache_Store $cache, Media_Importer $media ) {
-        $this->api    = $api;
-        $this->logger = $logger;
-        $this->cache  = $cache;
-        $this->media  = $media;
+    public function __construct( Api_Client $api, Logger $logger, Cache_Store $cache, Media_Importer $media, Scheduler $scheduler ) {
+        $this->api       = $api;
+        $this->logger    = $logger;
+        $this->cache     = $cache;
+        $this->media     = $media;
+        $this->scheduler = $scheduler;
         $this->next_runs     = get_option( 'tsdb_sync_next_runs', [] );
         $this->active_leagues = get_option( 'tsdb_active_leagues', [] );
     }
@@ -28,15 +30,7 @@ class Sync_Manager {
         add_action( 'tsdb_cron_tick', [ $this, 'cron_tick' ] );
         add_action( 'tsdb_sync_league', [ $this, 'run_league_sync' ], 10, 1 );
         add_action( 'tsdb_sync_event_details', [ $this, 'sync_event_details' ], 10, 1 );
-        add_filter( 'cron_schedules', function ( $schedules ) {
-            if ( ! isset( $schedules['minute'] ) ) {
-                $schedules['minute'] = [ 'interval' => 60, 'display' => __( 'Every Minute' ) ];
-            }
-            return $schedules;
-        } );
-        if ( ! wp_next_scheduled( 'tsdb_cron_tick' ) ) {
-            wp_schedule_event( time(), 'minute', 'tsdb_cron_tick' );
-        }
+        $this->scheduler->schedule_recurring( 'tsdb_cron_tick', MINUTE_IN_SECONDS );
         if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
             add_action( 'init', [ $this, 'recover_disabled_cron' ] );
         }
@@ -48,19 +42,19 @@ class Sync_Manager {
         $now = time();
         foreach ( $this->active_leagues as $ext_id ) {
             $next = $this->next_runs[ $ext_id ] ?? 0;
-            if ( $next <= $now && ! wp_next_scheduled( 'tsdb_sync_league', [ $ext_id ] ) ) {
-                wp_schedule_single_event( $now, 'tsdb_sync_league', [ $ext_id ] );
+            if ( $next <= $now && ! $this->scheduler->next_scheduled( 'tsdb_sync_league', [ $ext_id ] ) ) {
+                $this->scheduler->schedule_single( $now, 'tsdb_sync_league', [ $ext_id ] );
             }
         }
     }
 
     public function recover_disabled_cron() {
-        $timestamp = wp_next_scheduled( 'tsdb_cron_tick' );
+        $timestamp = $this->scheduler->next_scheduled( 'tsdb_cron_tick' );
         if ( $timestamp && $timestamp <= time() ) {
             $this->logger->warning( 'cron', 'recovering missed cron tick' );
-            wp_unschedule_event( $timestamp, 'tsdb_cron_tick' );
+            $this->scheduler->unschedule( 'tsdb_cron_tick' );
             $this->cron_tick();
-            wp_schedule_event( time() + MINUTE_IN_SECONDS, 'minute', 'tsdb_cron_tick' );
+            $this->scheduler->schedule_recurring( 'tsdb_cron_tick', MINUTE_IN_SECONDS );
         }
     }
 
@@ -80,7 +74,7 @@ class Sync_Manager {
         update_option( 'tsdb_active_leagues', $rows );
         foreach ( array_keys( $this->next_runs ) as $key ) {
             if ( ! in_array( $key, $rows, true ) ) {
-                wp_clear_scheduled_hook( 'tsdb_sync_league', [ $key ] );
+                $this->scheduler->unschedule( 'tsdb_sync_league', [ $key ] );
                 unset( $this->next_runs[ $key ] );
             }
         }
@@ -148,7 +142,7 @@ class Sync_Manager {
         $timestamp = $now + $interval;
         $this->next_runs[ $league_ext_id ] = $timestamp;
         update_option( 'tsdb_sync_next_runs', $this->next_runs );
-        wp_schedule_single_event( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
+        $this->scheduler->schedule_single( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
     }
 
     /**
@@ -163,7 +157,7 @@ class Sync_Manager {
         }
         $this->next_runs[ $league_ext_id ] = $timestamp;
         update_option( 'tsdb_sync_next_runs', $this->next_runs );
-        wp_schedule_single_event( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
+        $this->scheduler->schedule_single( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
     }
 
     public function run_league_sync( $league_ext_id ) {
@@ -542,13 +536,13 @@ class Sync_Manager {
             if ( ! empty( $row['idEvent'] ) ) {
                 $this->cache->delete( 'event_' . $row['idEvent'] );
                 $status = $row['strStatus'] ?? ( isset( $row['intHomeScore'] ) ? 'finished' : 'scheduled' );
-                if ( 'finished' === $status && ! wp_next_scheduled( 'tsdb_sync_event_details', [ $row['idEvent'] ] ) ) {
+                if ( 'finished' === $status && ! $this->scheduler->next_scheduled( 'tsdb_sync_event_details', [ $row['idEvent'] ] ) ) {
                     $has_stats = $wpdb->get_var( $wpdb->prepare(
                         "SELECT 1 FROM {$wpdb->prefix}tsdb_event_stats s JOIN {$table} e ON s.event_id = e.id WHERE e.ext_id = %s",
                         $row['idEvent']
                     ) );
                     if ( ! $has_stats ) {
-                        wp_schedule_single_event( time() + 5 * MINUTE_IN_SECONDS, 'tsdb_sync_event_details', [ $row['idEvent'] ] );
+                        $this->scheduler->schedule_single( time() + 5 * MINUTE_IN_SECONDS, 'tsdb_sync_event_details', [ $row['idEvent'] ] );
                     }
                 }
             }

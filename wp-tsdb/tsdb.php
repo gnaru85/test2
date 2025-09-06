@@ -53,7 +53,8 @@ function tsdb_init_plugin() {
     $cache        = new TSDB\Cache_Store();
     $api_client   = new TSDB\Api_Client( $logger, $rate_limiter, $cache );
     $media        = new TSDB\Media_Importer();
-    $sync_manager = new TSDB\Sync_Manager( $api_client, $logger, $cache, $media );
+    $scheduler    = new TSDB\Scheduler();
+    $sync_manager = new TSDB\Sync_Manager( $api_client, $logger, $cache, $media, $scheduler );
     $rest_api     = new TSDB\Rest_API( $api_client, $cache );
     $admin_ui     = new TSDB\Admin_UI( $api_client, $sync_manager, $logger );
     $cli          = new TSDB\CLI( $sync_manager, $cache, $logger );

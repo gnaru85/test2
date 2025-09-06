@@ -173,4 +173,43 @@ class Api_Client {
         }
         return $data;
     }
+
+    /**
+     * Fetch lineup information for a specific event.
+     *
+     * @param int $event_id External event ID.
+     *
+     * @return array|\WP_Error
+     */
+    public function event_lineup( $event_id ) {
+        return $this->get( '/lookuplineup.php', [ 'id' => $event_id ] );
+    }
+
+    /**
+     * Fetch honours for a player.
+     *
+     * @param int $player_id External player ID.
+     *
+     * @return array|\WP_Error
+     */
+    public function player_honours( $player_id ) {
+        return $this->get( '/lookuphonours.php', [ 'id' => $player_id ] );
+    }
+
+    /**
+     * Fetch transfer history for a player.
+     *
+     * @param int $player_id External player ID.
+     *
+     * @return array|\WP_Error
+     */
+    public function player_transfers( $player_id ) {
+        // Transfer history is provided via former teams lookup on v1 API.
+        $data = $this->get( '/lookupformerteams.php', [ 'id' => $player_id ] );
+        // Fallback to v2 endpoint if available.
+        if ( is_wp_error( $data ) || empty( $data ) ) {
+            $data = $this->get( '/lookuptransfers.php', [ 'id' => $player_id ], true );
+        }
+        return $data;
+    }
 }
