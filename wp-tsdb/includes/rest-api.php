@@ -245,7 +245,7 @@ class Rest_API {
         foreach ( $rows as $row ) {
             $row->logo_url = $row->logo_id ? wp_get_attachment_url( $row->logo_id ) : null;
         }
-        return rest_ensure_response( $rows );
+        return $this->etag_response( $request, $rows );
     }
 
     public function get_fixtures( $request ) {
@@ -286,7 +286,7 @@ class Rest_API {
             $row->home_badge = isset( $badges[ $row->home_id ] ) && $badges[ $row->home_id ] ? wp_get_attachment_url( $badges[ $row->home_id ] ) : null;
             $row->away_badge = isset( $badges[ $row->away_id ] ) && $badges[ $row->away_id ] ? wp_get_attachment_url( $badges[ $row->away_id ] ) : null;
         }
-        return rest_ensure_response( $rows );
+        return $this->etag_response( $request, $rows );
     }
 
     /**
