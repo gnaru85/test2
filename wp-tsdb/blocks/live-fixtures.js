@@ -15,7 +15,9 @@
                         const item = document.createElement('div');
                         const hs = f.home_score !== null && f.home_score !== undefined ? f.home_score : '';
                         const as = f.away_score !== null && f.away_score !== undefined ? f.away_score : '';
-                        item.textContent = `${f.home_id} ${hs} - ${as} ${f.away_id}`;
+                        const homeImg = f.home_badge ? `<img src="${f.home_badge}" alt="${f.home_name}"> ` : '';
+                        const awayImg = f.away_badge ? ` <img src="${f.away_badge}" alt="${f.away_name}">` : '';
+                        item.innerHTML = `${homeImg}${f.home_name} ${hs} - ${as} ${f.away_name}${awayImg}`;
                         el.appendChild(item);
                     });
                 }

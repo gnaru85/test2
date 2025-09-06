@@ -252,11 +252,16 @@ class Rest_API {
         global $wpdb;
         $league = absint( $request->get_param( 'league' ) );
         $status = sanitize_text_field( $request->get_param( 'status' ) );
-        $table     = $wpdb->prefix . 'tsdb_events';
-        $cache_key = 'fixtures_' . $league . '_' . $status;
-        $rows      = $this->cache->get( $cache_key );
+        $table       = $wpdb->prefix . 'tsdb_events';
+        $team_table  = $wpdb->prefix . 'tsdb_teams';
+        $cache_key   = 'fixtures_' . $league . '_' . $status;
+        $rows        = $this->cache->get( $cache_key );
         if ( false === $rows ) {
-            $sql  = $wpdb->prepare( "SELECT * FROM {$table} WHERE league_id=%d AND status=%s ORDER BY utc_start ASC", $league, $status );
+            $sql  = $wpdb->prepare(
+                "SELECT e.*, th.name AS home_name, th.badge_id AS home_badge_id, ta.name AS away_name, ta.badge_id AS away_badge_id FROM {$table} e JOIN {$team_table} th ON e.home_id = th.id JOIN {$team_table} ta ON e.away_id = ta.id WHERE e.league_id=%d AND e.status=%s ORDER BY e.utc_start ASC",
+                $league,
+                $status
+            );
             $rows = $wpdb->get_results( $sql );
             $ttl  = self::TTL_FIXTURE_SCHEDULED;
             if ( in_array( $status, [ 'live', 'inplay' ], true ) ) {
@@ -266,25 +271,9 @@ class Rest_API {
             }
             $this->cache->set( $cache_key, $rows, $ttl );
         }
-        $team_ids = [];
         foreach ( $rows as $row ) {
-            $team_ids[] = $row->home_id;
-            $team_ids[] = $row->away_id;
-        }
-        $team_ids = array_unique( array_map( 'intval', $team_ids ) );
-        $badges = [];
-        if ( $team_ids ) {
-            $placeholders = implode( ',', array_fill( 0, count( $team_ids ), '%d' ) );
-            $team_table   = $wpdb->prefix . 'tsdb_teams';
-            $sql = $wpdb->prepare( "SELECT id, badge_id FROM {$team_table} WHERE id IN ($placeholders)", $team_ids );
-            $results = $wpdb->get_results( $sql );
-            foreach ( $results as $r ) {
-                $badges[ $r->id ] = $r->badge_id;
-            }
-        }
-        foreach ( $rows as $row ) {
-            $row->home_badge = isset( $badges[ $row->home_id ] ) && $badges[ $row->home_id ] ? wp_get_attachment_url( $badges[ $row->home_id ] ) : null;
-            $row->away_badge = isset( $badges[ $row->away_id ] ) && $badges[ $row->away_id ] ? wp_get_attachment_url( $badges[ $row->away_id ] ) : null;
+            $row->home_badge = $row->home_badge_id ? wp_get_attachment_url( $row->home_badge_id ) : null;
+            $row->away_badge = $row->away_badge_id ? wp_get_attachment_url( $row->away_badge_id ) : null;
         }
         return rest_ensure_response( $rows );
     }
