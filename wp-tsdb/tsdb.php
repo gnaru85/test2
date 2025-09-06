@@ -47,12 +47,14 @@ function tsdb_init_plugin() {
     $api_client   = new TSDB\Api_Client( $logger, $rate_limiter, $cache );
     $sync_manager = new TSDB\Sync_Manager( $api_client, $logger, $cache );
     $rest_api     = new TSDB\Rest_API( $api_client, $cache );
-    $admin_ui     = new TSDB\Admin_UI( $api_client, $sync_manager );
+    $admin_ui     = new TSDB\Admin_UI( $api_client, $sync_manager, $logger );
+    $cli          = new TSDB\CLI( $sync_manager, $cache );
 
     // Boot services.
     $rest_api->register_routes();
     $admin_ui->init();
     $sync_manager->init_cron();
+    $cli->register();
 }
 add_action( 'plugins_loaded', 'tsdb_init_plugin' );
 

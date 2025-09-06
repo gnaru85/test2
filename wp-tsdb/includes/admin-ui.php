@@ -7,10 +7,12 @@ namespace TSDB;
 class Admin_UI {
     protected $api_client;
     protected $sync_manager;
+    protected $logger;
 
-    public function __construct( Api_Client $api_client, Sync_Manager $sync_manager ) {
+    public function __construct( Api_Client $api_client, Sync_Manager $sync_manager, Logger $logger ) {
         $this->api_client   = $api_client;
         $this->sync_manager = $sync_manager;
+        $this->logger       = $logger;
     }
 
     public function init() {
@@ -24,6 +26,8 @@ class Admin_UI {
 
     public function register_menu() {
         add_options_page( __( 'TheSportsDB', 'tsdb' ), __( 'TheSportsDB', 'tsdb' ), 'manage_options', 'tsdb', [ $this, 'settings_page' ] );
+        add_management_page( __( 'TSDB Logs', 'tsdb' ), __( 'TSDB Logs', 'tsdb' ), 'manage_options', 'tsdb-logs', [ $this, 'logs_page' ] );
+        add_management_page( __( 'TSDB Health', 'tsdb' ), __( 'TSDB Health', 'tsdb' ), 'manage_options', 'tsdb-health', [ $this, 'health_page' ] );
     }
 
     public function register_settings() {
@@ -110,6 +114,91 @@ class Admin_UI {
                 <button id="tsdb_seed_btn" class="button"><?php esc_html_e( 'Seed League', 'tsdb' ); ?></button>
                 <button id="tsdb_delta_btn" class="button"><?php esc_html_e( 'Refresh Events', 'tsdb' ); ?></button>
             </div>
+        </div>
+        <?php
+    }
+
+    public function logs_page() {
+        if ( isset( $_GET['export'] ) ) {
+            $format = sanitize_text_field( $_GET['export'] );
+            $logs   = $this->logger->get_logs();
+            if ( 'csv' === $format ) {
+                header( 'Content-Type: text/csv' );
+                header( 'Content-Disposition: attachment; filename=tsdb-logs.csv' );
+                $out = fopen( 'php://output', 'w' );
+                fputcsv( $out, [ 'ts', 'level', 'source', 'message', 'context' ] );
+                foreach ( $logs as $row ) {
+                    fputcsv( $out, [ $row['ts'], $row['level'], $row['source'], $row['message'], $row['context_json'] ] );
+                }
+                fclose( $out );
+            } else {
+                header( 'Content-Type: application/json' );
+                header( 'Content-Disposition: attachment; filename=tsdb-logs.json' );
+                echo wp_json_encode( $logs );
+            }
+            exit;
+        }
+        $logs = $this->logger->get_logs();
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e( 'TSDB Logs', 'tsdb' ); ?></h1>
+            <p>
+                <a href="?page=tsdb-logs&amp;export=json" class="button">Export JSON</a>
+                <a href="?page=tsdb-logs&amp;export=csv" class="button">Export CSV</a>
+            </p>
+            <table class="widefat">
+                <thead>
+                <tr>
+                    <th><?php esc_html_e( 'Time', 'tsdb' ); ?></th>
+                    <th><?php esc_html_e( 'Level', 'tsdb' ); ?></th>
+                    <th><?php esc_html_e( 'Source', 'tsdb' ); ?></th>
+                    <th><?php esc_html_e( 'Message', 'tsdb' ); ?></th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ( $logs as $row ) : ?>
+                    <tr>
+                        <td><?php echo esc_html( $row['ts'] ); ?></td>
+                        <td><?php echo esc_html( $row['level'] ); ?></td>
+                        <td><?php echo esc_html( $row['source'] ); ?></td>
+                        <td><?php echo esc_html( $row['message'] ); ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    }
+
+    public function health_page() {
+        global $wpdb;
+        $data = [
+            'php_version' => PHP_VERSION,
+            'wp_version'  => get_bloginfo( 'version' ),
+            'leagues'     => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}tsdb_leagues" ),
+            'events'      => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}tsdb_events" ),
+            'logs'        => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}tsdb_logs" ),
+        ];
+        if ( isset( $_GET['export'] ) ) {
+            header( 'Content-Type: application/json' );
+            header( 'Content-Disposition: attachment; filename=tsdb-health.json' );
+            echo wp_json_encode( $data );
+            exit;
+        }
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e( 'TSDB System Health', 'tsdb' ); ?></h1>
+            <p><a href="?page=tsdb-health&amp;export=json" class="button">Export JSON</a></p>
+            <table class="widefat">
+                <thead><tr><th><?php esc_html_e( 'Metric', 'tsdb' ); ?></th><th><?php esc_html_e( 'Value', 'tsdb' ); ?></th></tr></thead>
+                <tbody>
+                    <tr><td>PHP</td><td><?php echo esc_html( $data['php_version'] ); ?></td></tr>
+                    <tr><td>WordPress</td><td><?php echo esc_html( $data['wp_version'] ); ?></td></tr>
+                    <tr><td><?php esc_html_e( 'Leagues', 'tsdb' ); ?></td><td><?php echo esc_html( $data['leagues'] ); ?></td></tr>
+                    <tr><td><?php esc_html_e( 'Events', 'tsdb' ); ?></td><td><?php echo esc_html( $data['events'] ); ?></td></tr>
+                    <tr><td><?php esc_html_e( 'Log Entries', 'tsdb' ); ?></td><td><?php echo esc_html( $data['logs'] ); ?></td></tr>
+                </tbody>
+            </table>
         </div>
         <?php
     }
