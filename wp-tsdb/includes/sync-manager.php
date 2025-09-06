@@ -27,6 +27,7 @@ class Sync_Manager {
     public function init_cron() {
         add_action( 'tsdb_cron_tick', [ $this, 'cron_tick' ] );
         add_action( 'tsdb_sync_league', [ $this, 'run_league_sync' ], 10, 1 );
+        add_action( 'tsdb_sync_event_details', [ $this, 'sync_event_details' ], 10, 1 );
         add_filter( 'cron_schedules', function ( $schedules ) {
             if ( ! isset( $schedules['minute'] ) ) {
                 $schedules['minute'] = [ 'interval' => 60, 'display' => __( 'Every Minute' ) ];
@@ -535,6 +536,16 @@ class Sync_Manager {
 
             if ( ! empty( $row['idEvent'] ) ) {
                 $this->cache->delete( 'event_' . $row['idEvent'] );
+                $status = $row['strStatus'] ?? ( isset( $row['intHomeScore'] ) ? 'finished' : 'scheduled' );
+                if ( 'finished' === $status && ! wp_next_scheduled( 'tsdb_sync_event_details', [ $row['idEvent'] ] ) ) {
+                    $has_stats = $wpdb->get_var( $wpdb->prepare(
+                        "SELECT 1 FROM {$wpdb->prefix}tsdb_event_stats s JOIN {$table} e ON s.event_id = e.id WHERE e.ext_id = %s",
+                        $row['idEvent']
+                    ) );
+                    if ( ! $has_stats ) {
+                        wp_schedule_single_event( time() + 5 * MINUTE_IN_SECONDS, 'tsdb_sync_event_details', [ $row['idEvent'] ] );
+                    }
+                }
             }
 
             $count++;
@@ -551,5 +562,77 @@ class Sync_Manager {
             $this->cache->delete( 'standings_' . $league_ext_id . '_' . $season );
         }
         return $count;
+    }
+
+    /**
+     * Fetch and store detailed post-match data for an event.
+     *
+     * @param string $event_ext_id External event ID.
+     * @return void|\WP_Error
+     */
+    public function sync_event_details( $event_ext_id ) {
+        global $wpdb;
+        $events    = $wpdb->prefix . 'tsdb_events';
+        $timeline  = $wpdb->prefix . 'tsdb_event_timeline';
+        $stats_tbl = $wpdb->prefix . 'tsdb_event_stats';
+        $tv_tbl    = $wpdb->prefix . 'tsdb_broadcast';
+
+        $event = $wpdb->get_row( $wpdb->prepare( "SELECT id, league_id, season_id, utc_start FROM {$events} WHERE ext_id = %s", $event_ext_id ) );
+        if ( ! $event ) {
+            return new \WP_Error( 'tsdb_missing_event', __( 'Event not found', 'tsdb' ) );
+        }
+
+        // Timeline
+        $res = $this->api->get( '/eventstimeline.php', [ 'id' => $event_ext_id ], true );
+        if ( ! is_wp_error( $res ) && ! empty( $res['timeline'] ) ) {
+            $wpdb->delete( $timeline, [ 'event_id' => $event->id ], [ '%d' ] );
+            foreach ( $res['timeline'] as $row ) {
+                $wpdb->insert(
+                    $timeline,
+                    [
+                        'event_id'   => $event->id,
+                        'minute'     => isset( $row['intTime'] ) ? intval( $row['intTime'] ) : null,
+                        'type'       => $row['strTimeline'] ?? '',
+                        'team_id'    => isset( $row['idTeam'] ) ? intval( $row['idTeam'] ) : null,
+                        'player_id'  => isset( $row['idPlayer'] ) ? intval( $row['idPlayer'] ) : null,
+                        'assist_id'  => isset( $row['idAssist'] ) ? intval( $row['idAssist'] ) : null,
+                        'detail_json'=> wp_json_encode( $row ),
+                    ],
+                    [ '%d','%d','%s','%d','%d','%d','%s' ]
+                );
+            }
+        }
+
+        // Stats
+        $res = $this->api->get( '/lookupeventstats.php', [ 'id' => $event_ext_id ] );
+        if ( ! is_wp_error( $res ) && ! empty( $res['eventstats'] ) && 'Patreon Only' !== $res['eventstats'] ) {
+            $wpdb->replace(
+                $stats_tbl,
+                [
+                    'event_id'   => $event->id,
+                    'stats_json' => wp_json_encode( $res['eventstats'] ),
+                ],
+                [ '%d', '%s' ]
+            );
+        }
+
+        // Broadcast / TV info
+        $res = $this->api->get( '/lookuptv.php', [ 'id' => $event_ext_id ] );
+        if ( ! is_wp_error( $res ) && ! empty( $res['tvevent'] ) ) {
+            foreach ( $res['tvevent'] as $row ) {
+                $wpdb->replace(
+                    $tv_tbl,
+                    [
+                        'league_id'    => $event->league_id,
+                        'season_id'    => $event->season_id,
+                        'date_utc'     => $row['dateEvent'] ?? gmdate( 'Y-m-d', strtotime( $event->utc_start ) ),
+                        'country'      => $row['strCountry'] ?? '',
+                        'channel'      => $row['strChannel'] ?? '',
+                        'payload_json' => wp_json_encode( $row ),
+                    ],
+                    [ '%d','%d','%s','%s','%s','%s' ]
+                );
+            }
+        }
     }
 }
