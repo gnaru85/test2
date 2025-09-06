@@ -25,6 +25,9 @@ class Api_Client {
     /**
      * Perform GET request to API.
      *
+     * Retries up to three times with exponential backoff (15s, 30s, 60s) when
+     * requests fail.
+     *
      * @param string $endpoint Endpoint path e.g. '/search_all_leagues.php'.
      * @param array  $params   Query parameters.
      * @param bool   $v2       Whether to use v2 API.

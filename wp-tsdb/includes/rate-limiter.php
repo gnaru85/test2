@@ -12,6 +12,15 @@ class Rate_Limiter {
     protected $option_key    = 'tsdb_rate_limit';
 
     /**
+     * Persist the current token bucket state.
+     *
+     * @param array{tokens:int,next:int} $data State to store.
+     */
+    protected function save_state( array $data ) {
+        update_option( $this->option_key, $data );
+    }
+
+    /**
      * Load the current rate limit state from storage.
      *
      * @return array{tokens:int,next:int}
@@ -44,12 +53,12 @@ class Rate_Limiter {
         }
 
         if ( $data['tokens'] <= 0 ) {
-            update_option( $this->option_key, $data );
+            $this->save_state( $data );
             return false;
         }
 
         $data['tokens']--;
-        update_option( $this->option_key, $data );
+        $this->save_state( $data );
         return true;
     }
 
