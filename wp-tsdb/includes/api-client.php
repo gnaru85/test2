@@ -46,12 +46,14 @@ class Api_Client {
             $url = add_query_arg( $params, $url );
         }
 
-        $delays   = [ 0, 15, 30, 60 ];
         $response = null;
-        foreach ( $delays as $idx => $delay ) {
-            if ( $delay ) {
+        $delay    = 15;
+        for ( $attempt = 0; $attempt < 4; $attempt++ ) {
+            if ( $attempt > 0 ) {
                 sleep( $delay );
+                $delay = min( $delay * 2, 60 );
             }
+
             $response = wp_remote_get( $url, [ 'timeout' => 20 ] );
             if ( is_wp_error( $response ) ) {
                 $this->logger->error( 'api', $response->get_error_message() );
@@ -64,8 +66,7 @@ class Api_Client {
                 $response = new \WP_Error( 'tsdb_http_' . $code, 'HTTP ' . $code );
             }
 
-            // Last attempt? bail with error.
-            if ( $idx === count( $delays ) - 1 ) {
+            if ( $attempt === 3 ) {
                 return $response;
             }
         }
