@@ -69,5 +69,31 @@
                 alert(resp.data ? resp.data.message : 'Done');
             });
         });
+        $('#tsdb_seed_btn').on('click', function(e){
+            e.preventDefault();
+            const league = $('#tsdb_league').val();
+            const season = $('#tsdb_season').val();
+            $.post(ajaxurl, {
+                action: 'tsdb_seed',
+                league: league,
+                season: season,
+                _ajax_nonce: tsdbAdmin.nonce
+            }, function(resp){
+                alert(resp.data ? resp.data.message : 'Done');
+            });
+        });
+        $('#tsdb_delta_btn').on('click', function(e){
+            e.preventDefault();
+            const league = $('#tsdb_league').val();
+            const season = $('#tsdb_season').val();
+            $.post(ajaxurl, {
+                action: 'tsdb_delta',
+                league: league,
+                season: season,
+                _ajax_nonce: tsdbAdmin.nonce
+            }, function(resp){
+                alert(resp.data ? resp.data.message : 'Done');
+            });
+        });
     });
 })(jQuery);
