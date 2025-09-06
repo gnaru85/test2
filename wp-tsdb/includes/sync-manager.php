@@ -170,7 +170,8 @@ class Sync_Manager {
         // Refresh seasons and teams before syncing events.
         $result = $this->sync_seasons( $league_ext_id );
         if ( is_wp_error( $result ) ) {
-            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+            $code = $result->get_error_code();
+            if ( 'tsdb_rate_limited' === $code || 'tsdb_server_error' === $code ) {
                 $this->requeue_sync( $league_ext_id );
             }
             return;
@@ -178,7 +179,8 @@ class Sync_Manager {
 
         $result = $this->sync_teams( $league_ext_id );
         if ( is_wp_error( $result ) ) {
-            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+            $code = $result->get_error_code();
+            if ( 'tsdb_rate_limited' === $code || 'tsdb_server_error' === $code ) {
                 $this->requeue_sync( $league_ext_id );
             }
             return;
@@ -186,7 +188,8 @@ class Sync_Manager {
 
         $result = $this->sync_players( $league_ext_id );
         if ( is_wp_error( $result ) ) {
-            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+            $code = $result->get_error_code();
+            if ( 'tsdb_rate_limited' === $code || 'tsdb_server_error' === $code ) {
                 $this->requeue_sync( $league_ext_id );
             }
             return;
@@ -194,7 +197,8 @@ class Sync_Manager {
 
         $result = $this->sync_venues( $league_ext_id );
         if ( is_wp_error( $result ) ) {
-            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+            $code = $result->get_error_code();
+            if ( 'tsdb_rate_limited' === $code || 'tsdb_server_error' === $code ) {
                 $this->requeue_sync( $league_ext_id );
             }
             return;
@@ -208,7 +212,8 @@ class Sync_Manager {
         if ( $season ) {
             $result = $this->sync_events( $league_ext_id, $season );
             if ( is_wp_error( $result ) ) {
-                if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+                $code = $result->get_error_code();
+                if ( 'tsdb_rate_limited' === $code || 'tsdb_server_error' === $code ) {
                     $this->requeue_sync( $league_ext_id );
                 }
                 return;
