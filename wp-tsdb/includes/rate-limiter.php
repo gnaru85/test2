@@ -17,7 +17,11 @@ class Rate_Limiter {
      * @param array{tokens:int,next:int} $data State to store.
      */
     protected function save_state( array $data ) {
-        update_option( $this->option_key, $data );
+        if ( wp_using_ext_object_cache() ) {
+            set_transient( $this->option_key, $data, MINUTE_IN_SECONDS );
+        } else {
+            update_option( $this->option_key, $data );
+        }
     }
 
     /**
@@ -26,11 +30,20 @@ class Rate_Limiter {
      * @return array{tokens:int,next:int}
      */
     public function get_state() {
-        $now  = time();
-        $data = get_option(
-            $this->option_key,
-            [ 'tokens' => $this->limit_per_min, 'next' => $now ]
-        );
+        $now = time();
+
+        if ( wp_using_ext_object_cache() ) {
+            $data = get_transient( $this->option_key );
+            if ( false === $data ) {
+                $data = [ 'tokens' => $this->limit_per_min, 'next' => $now ];
+            }
+        } else {
+            $data = get_option(
+                $this->option_key,
+                [ 'tokens' => $this->limit_per_min, 'next' => $now ]
+            );
+        }
+
         return [
             'tokens' => (int) $data['tokens'],
             'next'   => (int) $data['next'],
