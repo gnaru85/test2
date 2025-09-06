@@ -183,6 +183,22 @@ class Sync_Manager {
             return;
         }
 
+        $result = $this->sync_players( $league_ext_id );
+        if ( is_wp_error( $result ) ) {
+            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+                $this->requeue_sync( $league_ext_id );
+            }
+            return;
+        }
+
+        $result = $this->sync_venues( $league_ext_id );
+        if ( is_wp_error( $result ) ) {
+            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+                $this->requeue_sync( $league_ext_id );
+            }
+            return;
+        }
+
         global $wpdb;
         $season = $wpdb->get_var( $wpdb->prepare(
             "SELECT season_current FROM {$wpdb->prefix}tsdb_leagues WHERE ext_id = %s",
@@ -232,6 +248,127 @@ class Sync_Manager {
             );
             $count++;
         }
+        $this->media->cleanup_orphans();
+        return $count;
+    }
+
+    /**
+     * Import players for all teams in a league.
+     *
+     * @param string $league_ext_id External league ID.
+     * @return int|\WP_Error
+     */
+    public function sync_players( $league_ext_id ) {
+        global $wpdb;
+        $league_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$wpdb->prefix}tsdb_leagues WHERE ext_id = %s", $league_ext_id ) );
+        if ( ! $league_id ) {
+            return new \WP_Error( 'tsdb_missing_league', __( 'League not found', 'tsdb' ) );
+        }
+
+        $teams = $wpdb->get_results( $wpdb->prepare( "SELECT id, ext_id FROM {$wpdb->prefix}tsdb_teams WHERE league_id = %d", $league_id ), ARRAY_A );
+        $table = $wpdb->prefix . 'tsdb_players';
+        $count = 0;
+
+        foreach ( $teams as $team ) {
+            $data = $this->api->get( '/lookup_all_players.php', [ 'id' => $team['ext_id'] ] );
+            if ( is_wp_error( $data ) ) {
+                return $data;
+            }
+            if ( empty( $data['player'] ) ) {
+                continue;
+            }
+            foreach ( $data['player'] as $row ) {
+                $existing = $wpdb->get_var( $wpdb->prepare( "SELECT thumb_id FROM {$table} WHERE ext_id = %s", $row['idPlayer'] ?? '' ) );
+                $thumb_id = $this->media->import( $row['strCutout'] ?? ( $row['strThumb'] ?? '' ), $existing );
+                $wpdb->replace(
+                    $table,
+                    [
+                        'team_id'     => $team['id'],
+                        'name'        => $row['strPlayer'] ?? '',
+                        'pos'         => $row['strPosition'] ?? null,
+                        'ext_id'      => $row['idPlayer'] ?? '',
+                        'thumb_id'    => $thumb_id,
+                        'thumb_url'   => $row['strCutout'] ?? ( $row['strThumb'] ?? null ),
+                        'number'      => $row['strNumber'] ?? null,
+                        'nationality' => $row['strNationality'] ?? null,
+                        'dob'         => $row['dateBorn'] ?? null,
+                        'bio_json'    => ! empty( $row['strDescriptionEN'] ) ? wp_json_encode( [ 'description' => $row['strDescriptionEN'] ] ) : null,
+                    ],
+                    [ '%d','%s','%s','%s','%d','%s','%s','%s','%s','%s' ]
+                );
+                $count++;
+            }
+            $this->cache->delete( 'players_' . $team['ext_id'] );
+        }
+        $this->media->cleanup_orphans();
+        return $count;
+    }
+
+    /**
+     * Import venues for teams in a league.
+     *
+     * @param string $league_ext_id External league ID.
+     * @return int|\WP_Error
+     */
+    public function sync_venues( $league_ext_id ) {
+        global $wpdb;
+        $league_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$wpdb->prefix}tsdb_leagues WHERE ext_id = %s", $league_ext_id ) );
+        if ( ! $league_id ) {
+            return new \WP_Error( 'tsdb_missing_league', __( 'League not found', 'tsdb' ) );
+        }
+
+        $teams = $wpdb->get_results( $wpdb->prepare( "SELECT id, ext_id FROM {$wpdb->prefix}tsdb_teams WHERE league_id = %d", $league_id ), ARRAY_A );
+        $venue_table = $wpdb->prefix . 'tsdb_venues';
+        $team_table  = $wpdb->prefix . 'tsdb_teams';
+        $count = 0;
+
+        foreach ( $teams as $team ) {
+            $team_data = $this->api->get( '/lookupteam.php', [ 'id' => $team['ext_id'] ] );
+            if ( is_wp_error( $team_data ) ) {
+                return $team_data;
+            }
+            $team_row = $team_data['teams'][0] ?? null;
+            if ( ! $team_row || empty( $team_row['strStadium'] ) ) {
+                continue;
+            }
+
+            $venue_data = $this->api->get( '/searchvenues.php', [ 'v' => $team_row['strStadium'] ] );
+            if ( is_wp_error( $venue_data ) ) {
+                return $venue_data;
+            }
+            $venue = $venue_data['venues'][0] ?? null;
+            if ( ! $venue ) {
+                continue;
+            }
+
+            $existing_image = $wpdb->get_var( $wpdb->prepare( "SELECT image_id FROM {$venue_table} WHERE ext_id = %s", $venue['idVenue'] ) );
+            $image_id       = $this->media->import( $venue['strThumb'] ?? '', $existing_image );
+
+            $wpdb->replace(
+                $venue_table,
+                [
+                    'name'     => $venue['strVenue'] ?? '',
+                    'city'     => $venue['strCity'] ?? null,
+                    'country'  => $venue['strCountry'] ?? null,
+                    'ext_id'   => $venue['idVenue'] ?? '',
+                    'image_id' => $image_id,
+                    'image_url'=> $venue['strThumb'] ?? null,
+                    'capacity' => isset( $venue['intCapacity'] ) ? intval( $venue['intCapacity'] ) : null,
+                    'lat'      => isset( $venue['strLat'] ) ? floatval( $venue['strLat'] ) : null,
+                    'lng'      => isset( $venue['strLong'] ) ? floatval( $venue['strLong'] ) : null,
+                ],
+                [ '%s','%s','%s','%s','%d','%s','%d','%f','%f' ]
+            );
+
+            $venue_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$venue_table} WHERE ext_id = %s", $venue['idVenue'] ) );
+            if ( $venue_id ) {
+                $wpdb->update( $team_table, [ 'venue_id' => $venue_id ], [ 'id' => $team['id'] ], [ '%d' ], [ '%d' ] );
+            }
+            $this->cache->delete( 'team_' . $team['ext_id'] );
+            $this->cache->delete( 'venue_' . ( $venue['idVenue'] ?? '' ) );
+            $count++;
+        }
+
         $this->media->cleanup_orphans();
         return $count;
     }
