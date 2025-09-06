@@ -152,7 +152,7 @@ class Rest_API {
                     ],
                 ],
             ] );
-            register_rest_route( 'tsdb/v1', '/event/(?P<id>\\d+)/lineup', [
+            register_rest_route( 'tsdb/v1', '/event/(?P<id>\d+)/lineup', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_lineup' ],
                 'permission_callback' => [ $this, 'permissions_check_public' ],
@@ -165,7 +165,7 @@ class Rest_API {
                     ],
                 ],
             ] );
-            register_rest_route( 'tsdb/v1', '/player/(?P<id>\\d+)/transfers', [
+            register_rest_route( 'tsdb/v1', '/player/(?P<id>\d+)/transfers', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_transfers' ],
                 'permission_callback' => [ $this, 'permissions_check_public' ],
@@ -178,7 +178,7 @@ class Rest_API {
                     ],
                 ],
             ] );
-            register_rest_route( 'tsdb/v1', '/player/(?P<id>\\d+)/honours', [
+            register_rest_route( 'tsdb/v1', '/player/(?P<id>\d+)/honours', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_honours' ],
                 'permission_callback' => [ $this, 'permissions_check_public' ],
