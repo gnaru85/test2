@@ -33,37 +33,37 @@ class Rest_API {
             register_rest_route( 'tsdb/v1', '/leagues', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_leagues' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
             ] );
             register_rest_route( 'tsdb/v1', '/fixtures', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_fixtures' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
             ] );
             register_rest_route( 'tsdb/v1', '/ref/countries', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'remote_countries' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
             ] );
             register_rest_route( 'tsdb/v1', '/ref/sports', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'remote_sports' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
             ] );
             register_rest_route( 'tsdb/v1', '/ref/leagues', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'remote_leagues' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
             ] );
             register_rest_route( 'tsdb/v1', '/ref/seasons', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'remote_seasons' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
             ] );
             register_rest_route( 'tsdb/v1', '/live', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_live' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
                 'args'     => [
                     'league' => [
                         'description'       => 'Internal league ID.',
@@ -75,7 +75,7 @@ class Rest_API {
             register_rest_route( 'tsdb/v1', '/standings', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_standings' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
                 'args'     => [
                     'league' => [
                         'description'       => 'External league ID.',
@@ -93,7 +93,7 @@ class Rest_API {
             register_rest_route( 'tsdb/v1', '/team/(?P<id>\d+)', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_team' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
                 'args'     => [
                     'id' => [
                         'description'       => 'Team external ID.',
@@ -106,7 +106,7 @@ class Rest_API {
             register_rest_route( 'tsdb/v1', '/event/(?P<id>\d+)', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_event' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
                 'args'     => [
                     'id' => [
                         'description'       => 'Event external ID.',
@@ -119,7 +119,7 @@ class Rest_API {
             register_rest_route( 'tsdb/v1', '/h2h', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_h2h' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
                 'args'     => [
                     'team1' => [
                         'description'       => 'First team internal ID.',
@@ -138,7 +138,7 @@ class Rest_API {
             register_rest_route( 'tsdb/v1', '/tv', [
                 'methods'  => 'GET',
                 'callback' => [ $this, 'get_tv' ],
-                'permission_callback' => '__return_true',
+                'permission_callback' => [ $this, 'permissions_check' ],
                 'args'     => [
                     'country' => [
                         'description'       => 'Country code for TV listings.',
@@ -150,11 +150,14 @@ class Rest_API {
             register_rest_route( 'tsdb/v1', '/cache', [
                 'methods'  => 'DELETE',
                 'callback' => [ $this, 'purge_cache' ],
-                'permission_callback' => function () {
-                    return current_user_can( 'manage_options' );
-                },
+                'permission_callback' => [ $this, 'permissions_check' ],
             ] );
         } );
+    }
+
+    public function permissions_check( $request ) {
+        $nonce = $request->get_header( 'X-WP-Nonce' );
+        return $nonce && wp_verify_nonce( $nonce, 'tsdb_sync' ) && current_user_can( 'manage_options' );
     }
 
     /**

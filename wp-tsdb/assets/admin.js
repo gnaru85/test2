@@ -1,25 +1,32 @@
 (function($){
     const apiBase = tsdbAdmin.rest;
 
+    async function apiFetch(path){
+        const res = await fetch(apiBase + path, {
+            headers: { 'X-WP-Nonce': tsdbAdmin.nonce }
+        });
+        return res.json();
+    }
+
     async function populateCountries(){
-        const res = await fetch(apiBase + 'countries');
-        const data = await res.json();
+        const data = await apiFetch('countries');
         const select = $('#tsdb_country').empty();
-        select.append('<option value="">Select Country</option>');
+        select.append($('<option>').val('').text('Select Country'));
         data.forEach(c => {
             const name = c.name_en || c.name || c.strCountry;
-            select.append(`<option value="${name}">${name}</option>`);
+            const opt = $('<option>').val(name).text(name);
+            select.append(opt);
         });
     }
 
     async function populateSports(){
-        const res = await fetch(apiBase + 'sports');
-        const data = await res.json();
+        const data = await apiFetch('sports');
         const select = $('#tsdb_sport').empty();
-        select.append('<option value="">Select Sport</option>');
+        select.append($('<option>').val('').text('Select Sport'));
         data.forEach(s => {
             const name = s.strSport || s.name;
-            select.append(`<option value="${name}">${name}</option>`);
+            const opt = $('<option>').val(name).text(name);
+            select.append(opt);
         });
     }
 
@@ -27,27 +34,27 @@
         const country = $('#tsdb_country').val();
         const sport = $('#tsdb_sport').val();
         if(!country || !sport){ return; }
-        const res = await fetch(`${apiBase}leagues?country=${encodeURIComponent(country)}&sport=${encodeURIComponent(sport)}`);
-        const data = await res.json();
+        const data = await apiFetch(`leagues?country=${encodeURIComponent(country)}&sport=${encodeURIComponent(sport)}`);
         const select = $('#tsdb_league').empty();
-        select.append('<option value="">Select League</option>');
+        select.append($('<option>').val('').text('Select League'));
         data.forEach(l => {
             const id = l.idLeague || l.id;
             const name = l.strLeague || l.name;
-            select.append(`<option value="${id}">${name}</option>`);
+            const opt = $('<option>').val(id).text(name);
+            select.append(opt);
         });
     }
 
     async function populateSeasons(){
         const league = $('#tsdb_league').val();
         if(!league){ return; }
-        const res = await fetch(`${apiBase}seasons?league=${encodeURIComponent(league)}`);
-        const data = await res.json();
+        const data = await apiFetch(`seasons?league=${encodeURIComponent(league)}`);
         const select = $('#tsdb_season').empty();
-        select.append('<option value="">Select Season</option>');
+        select.append($('<option>').val('').text('Select Season'));
         data.forEach(s => {
             const name = s.strSeason || s.name;
-            select.append(`<option value="${name}">${name}</option>`);
+            const opt = $('<option>').val(name).text(name);
+            select.append(opt);
         });
     }
 
