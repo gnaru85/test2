@@ -15,6 +15,8 @@ class Rest_API {
     const TTL_STANDINGS = 10 * MINUTE_IN_SECONDS;
     const TTL_TEAM      = DAY_IN_SECONDS;
     const TTL_EVENT     = 10 * MINUTE_IN_SECONDS;
+    const TTL_PLAYERS   = DAY_IN_SECONDS;
+    const TTL_VENUE     = DAY_IN_SECONDS;
     const TTL_H2H       = DAY_IN_SECONDS;
     const TTL_TV        = HOUR_IN_SECONDS;
 
@@ -97,6 +99,32 @@ class Rest_API {
                 'args'     => [
                     'id' => [
                         'description'       => 'Team external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
+            register_rest_route( 'tsdb/v1', '/team/(?P<id>\d+)/players', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_players' ],
+                'permission_callback' => [ $this, 'permissions_check' ],
+                'args'     => [
+                    'id' => [
+                        'description'       => 'Team external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
+            register_rest_route( 'tsdb/v1', '/venue/(?P<id>\d+)', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_venue' ],
+                'permission_callback' => [ $this, 'permissions_check' ],
+                'args'     => [
+                    'id' => [
+                        'description'       => 'Venue external ID.',
                         'type'              => 'integer',
                         'required'          => true,
                         'sanitize_callback' => 'absint',
@@ -429,6 +457,36 @@ class Rest_API {
     }
 
     /**
+     * Retrieve players for a team from the local database.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response
+     */
+    public function get_players( $request ) {
+        global $wpdb;
+        $ext_id    = absint( $request['id'] );
+        $cache_key = 'players_' . $ext_id;
+        $data      = $this->cache->get( $cache_key );
+        if ( false === $data ) {
+            $team_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$wpdb->prefix}tsdb_teams WHERE ext_id = %s", $ext_id ) );
+            if ( $team_id ) {
+                $rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$wpdb->prefix}tsdb_players WHERE team_id = %d ORDER BY name", $team_id ), ARRAY_A );
+                foreach ( $rows as &$row ) {
+                    if ( $row['thumb_id'] ) {
+                        $row['thumb_url'] = wp_get_attachment_url( $row['thumb_id'] );
+                    }
+                }
+                unset( $row );
+                $data = $rows;
+            } else {
+                $data = [];
+            }
+            $this->cache->set( $cache_key, $data, self::TTL_PLAYERS );
+        }
+        return $this->etag_response( $request, $data );
+    }
+
+    /**
      * Retrieve an event from the API.
      *
      * @param \WP_REST_Request $request Request object.
@@ -453,6 +511,28 @@ class Rest_API {
             $away_badge_id = $wpdb->get_var( $wpdb->prepare( "SELECT badge_id FROM {$team_table} WHERE ext_id = %s", $data['idAwayTeam'] ?? '' ) );
             $data['home_badge'] = $home_badge_id ? wp_get_attachment_url( $home_badge_id ) : null;
             $data['away_badge'] = $away_badge_id ? wp_get_attachment_url( $away_badge_id ) : null;
+        }
+        return $this->etag_response( $request, $data );
+    }
+
+    /**
+     * Retrieve a venue from the local database.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response
+     */
+    public function get_venue( $request ) {
+        global $wpdb;
+        $ext_id   = absint( $request['id'] );
+        $cache_key = 'venue_' . $ext_id;
+        $data      = $this->cache->get( $cache_key );
+        if ( false === $data ) {
+            $row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->prefix}tsdb_venues WHERE ext_id = %s", $ext_id ), ARRAY_A );
+            if ( $row && $row['image_id'] ) {
+                $row['image_url'] = wp_get_attachment_url( $row['image_id'] );
+            }
+            $data = $row;
+            $this->cache->set( $cache_key, $data, self::TTL_VENUE );
         }
         return $this->etag_response( $request, $data );
     }
