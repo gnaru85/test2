@@ -45,7 +45,7 @@ class Sync_Manager {
         foreach ( $this->active_leagues as $ext_id ) {
             $next = $this->next_runs[ $ext_id ] ?? 0;
             if ( $next <= $now ) {
-                $this->schedule_next_sync( $ext_id );
+                $this->run_league_sync( $ext_id );
             }
         }
     }
@@ -133,9 +133,6 @@ class Sync_Manager {
         $timestamp = $now + $interval;
         $this->next_runs[ $league_ext_id ] = $timestamp;
         update_option( 'tsdb_sync_next_runs', $this->next_runs );
-        if ( ! wp_next_scheduled( 'tsdb_sync_league', [ $league_ext_id ] ) ) {
-            wp_schedule_single_event( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
-        }
     }
 
     /**
@@ -151,12 +148,22 @@ class Sync_Manager {
         }
         $this->next_runs[ $league_ext_id ] = $timestamp;
         update_option( 'tsdb_sync_next_runs', $this->next_runs );
-        if ( ! wp_next_scheduled( 'tsdb_sync_league', [ $league_ext_id ] ) ) {
-            wp_schedule_single_event( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
-        }
     }
 
     public function run_league_sync( $league_ext_id ) {
+        // Refresh seasons and teams before syncing events.
+        $result = $this->sync_seasons( $league_ext_id );
+        if ( is_wp_error( $result ) && 'tsdb_rate_limited' === $result->get_error_code() ) {
+            $this->requeue_sync( $league_ext_id );
+            return;
+        }
+
+        $result = $this->sync_teams( $league_ext_id );
+        if ( is_wp_error( $result ) && 'tsdb_rate_limited' === $result->get_error_code() ) {
+            $this->requeue_sync( $league_ext_id );
+            return;
+        }
+
         global $wpdb;
         $season = $wpdb->get_var( $wpdb->prepare(
             "SELECT season_current FROM {$wpdb->prefix}tsdb_leagues WHERE ext_id = %s",
