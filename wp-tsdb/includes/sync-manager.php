@@ -36,6 +36,9 @@ class Sync_Manager {
         if ( ! wp_next_scheduled( 'tsdb_cron_tick' ) ) {
             wp_schedule_event( time(), 'minute', 'tsdb_cron_tick' );
         }
+        if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
+            add_action( 'init', [ $this, 'recover_disabled_cron' ] );
+        }
     }
 
     public function cron_tick() {
@@ -47,6 +50,16 @@ class Sync_Manager {
             if ( $next <= $now && ! wp_next_scheduled( 'tsdb_sync_league', [ $ext_id ] ) ) {
                 wp_schedule_single_event( $now, 'tsdb_sync_league', [ $ext_id ] );
             }
+        }
+    }
+
+    public function recover_disabled_cron() {
+        $timestamp = wp_next_scheduled( 'tsdb_cron_tick' );
+        if ( $timestamp && $timestamp <= time() ) {
+            $this->logger->warning( 'cron', 'recovering missed cron tick' );
+            wp_unschedule_event( $timestamp, 'tsdb_cron_tick' );
+            $this->cron_tick();
+            wp_schedule_event( time() + MINUTE_IN_SECONDS, 'minute', 'tsdb_cron_tick' );
         }
     }
 

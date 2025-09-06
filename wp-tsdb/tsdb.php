@@ -41,6 +41,7 @@ spl_autoload_register( function ( $class ) {
 require_once TSDB_PATH . 'includes/crypto.php';
 require_once TSDB_PATH . 'includes/blocks.php';
 require_once TSDB_PATH . 'includes/shortcodes.php';
+require_once TSDB_PATH . 'includes/cpts.php';
 
 /**
  * Initialize plugin services.
