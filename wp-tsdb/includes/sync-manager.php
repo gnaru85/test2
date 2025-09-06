@@ -141,7 +141,8 @@ class Sync_Manager {
      * @param string $league_ext_id External league ID.
      */
     protected function requeue_sync( $league_ext_id ) {
-        $timestamp = $this->api->get_rate_limiter()->next_available();
+        $state     = $this->api->get_rate_limiter()->get_state();
+        $timestamp = $state['next'];
         if ( $timestamp <= time() ) {
             $timestamp = time() + MINUTE_IN_SECONDS;
         }
