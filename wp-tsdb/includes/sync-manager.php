@@ -9,7 +9,10 @@ class Sync_Manager {
     protected $logger;
     protected $cache;
     protected $media;
+    /** @var array<string,int> Timestamp of the next sync for each league */
     protected $next_runs = [];
+
+    /** @var array<string> List of leagues currently eligible for polling */
     protected $active_leagues = [];
 
     public function __construct( Api_Client $api, Logger $logger, Cache_Store $cache, Media_Importer $media ) {
@@ -24,15 +27,15 @@ class Sync_Manager {
     public function init_cron() {
         add_action( 'tsdb_cron_tick', [ $this, 'cron_tick' ] );
         add_action( 'tsdb_sync_league', [ $this, 'run_league_sync' ], 10, 1 );
-        if ( ! wp_next_scheduled( 'tsdb_cron_tick' ) ) {
-            wp_schedule_event( time(), 'minute', 'tsdb_cron_tick' );
-        }
         add_filter( 'cron_schedules', function ( $schedules ) {
             if ( ! isset( $schedules['minute'] ) ) {
                 $schedules['minute'] = [ 'interval' => 60, 'display' => __( 'Every Minute' ) ];
             }
             return $schedules;
         } );
+        if ( ! wp_next_scheduled( 'tsdb_cron_tick' ) ) {
+            wp_schedule_event( time(), 'minute', 'tsdb_cron_tick' );
+        }
     }
 
     public function cron_tick() {
