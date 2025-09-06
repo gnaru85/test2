@@ -8,13 +8,15 @@ class Sync_Manager {
     protected $api;
     protected $logger;
     protected $cache;
+    protected $media;
     protected $next_runs = [];
     protected $active_leagues = [];
 
-    public function __construct( Api_Client $api, Logger $logger, Cache_Store $cache ) {
+    public function __construct( Api_Client $api, Logger $logger, Cache_Store $cache, Media_Importer $media ) {
         $this->api    = $api;
         $this->logger = $logger;
         $this->cache  = $cache;
+        $this->media  = $media;
         $this->next_runs     = get_option( 'tsdb_sync_next_runs', [] );
         $this->active_leagues = get_option( 'tsdb_active_leagues', [] );
     }
@@ -160,6 +162,8 @@ class Sync_Manager {
         $table = $wpdb->prefix . 'tsdb_leagues';
         $count = 0;
         foreach ( $data['countrys'] as $row ) {
+            $existing = $wpdb->get_var( $wpdb->prepare( "SELECT logo_id FROM {$table} WHERE ext_id = %s", $row['idLeague'] ) );
+            $logo_id  = $this->media->import( $row['strLogo'], $existing );
             $wpdb->replace(
                 $table,
                 [
@@ -168,12 +172,14 @@ class Sync_Manager {
                     'country'       => $row['strCountry'],
                     'name'          => $row['strLeague'],
                     'season_current'=> $row['strCurrentSeason'],
+                    'logo_id'       => $logo_id,
                     'logo_url'      => $row['strLogo'],
                 ],
-                [ '%s', '%s', '%s', '%s', '%s', '%s' ]
+                [ '%s', '%s', '%s', '%s', '%s', '%d', '%s' ]
             );
             $count++;
         }
+        $this->media->cleanup_orphans();
         return $count;
     }
 
@@ -246,6 +252,8 @@ class Sync_Manager {
         $table = $wpdb->prefix . 'tsdb_teams';
         $count = 0;
         foreach ( $data['teams'] as $row ) {
+            $existing = $wpdb->get_var( $wpdb->prepare( "SELECT badge_id FROM {$table} WHERE ext_id = %s", $row['idTeam'] ?? '' ) );
+            $badge_id = $this->media->import( $row['strTeamBadge'] ?? '', $existing );
             $wpdb->replace(
                 $table,
                 [
@@ -253,6 +261,7 @@ class Sync_Manager {
                     'name'        => $row['strTeam'] ?? '',
                     'short_name'  => $row['strTeamShort'] ?? null,
                     'ext_id'      => $row['idTeam'] ?? '',
+                    'badge_id'    => $badge_id,
                     'badge_url'   => $row['strTeamBadge'] ?? null,
                     'venue_id'    => null,
                     'country'     => $row['strCountry'] ?? null,
@@ -263,10 +272,11 @@ class Sync_Manager {
                         'instagram' => $row['strInstagram'] ?? '',
                     ] ) : null,
                 ],
-                [ '%d','%s','%s','%s','%s','%d','%s','%d','%s' ]
+                [ '%d','%s','%s','%s','%d','%s','%d','%s','%d','%s' ]
             );
             $count++;
         }
+        $this->media->cleanup_orphans();
         return $count;
     }
 

@@ -29,7 +29,8 @@ spl_autoload_register( function ( $class ) {
     }
 
     $path = TSDB_PATH . 'includes/' . strtolower( str_replace( 'TSDB\\', '', $class ) );
-    $path = str_replace( '\\', '/', $path ) . '.php';
+    $path = str_replace( '\\', '/', $path );
+    $path = str_replace( '_', '-', $path ) . '.php';
 
     if ( file_exists( $path ) ) {
         include $path;
@@ -45,7 +46,8 @@ function tsdb_init_plugin() {
     $rate_limiter = new TSDB\Rate_Limiter();
     $cache        = new TSDB\Cache_Store();
     $api_client   = new TSDB\Api_Client( $logger, $rate_limiter, $cache );
-    $sync_manager = new TSDB\Sync_Manager( $api_client, $logger, $cache );
+    $media        = new TSDB\Media_Importer();
+    $sync_manager = new TSDB\Sync_Manager( $api_client, $logger, $cache, $media );
     $rest_api     = new TSDB\Rest_API( $api_client, $cache );
     $admin_ui     = new TSDB\Admin_UI( $api_client, $sync_manager, $logger );
     $cli          = new TSDB\CLI( $sync_manager, $cache );
@@ -76,6 +78,7 @@ function tsdb_activate() {
         country varchar(100) NOT NULL,
         name varchar(255) NOT NULL,
         season_current varchar(25) DEFAULT NULL,
+        logo_id bigint(20) unsigned DEFAULT NULL,
         logo_url text DEFAULT NULL,
         updated_at datetime DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
@@ -99,6 +102,7 @@ function tsdb_activate() {
         name varchar(255) NOT NULL,
         short_name varchar(100) DEFAULT NULL,
         ext_id varchar(50) NOT NULL,
+        badge_id bigint(20) unsigned DEFAULT NULL,
         badge_url text DEFAULT NULL,
         venue_id bigint(20) unsigned DEFAULT NULL,
         country varchar(100) DEFAULT NULL,
@@ -115,6 +119,7 @@ function tsdb_activate() {
         name varchar(255) NOT NULL,
         pos varchar(10) DEFAULT NULL,
         ext_id varchar(50) NOT NULL,
+        thumb_id bigint(20) unsigned DEFAULT NULL,
         thumb_url text DEFAULT NULL,
         number varchar(20) DEFAULT NULL,
         nationality varchar(100) DEFAULT NULL,
@@ -131,6 +136,7 @@ function tsdb_activate() {
         city varchar(100) DEFAULT NULL,
         country varchar(100) DEFAULT NULL,
         ext_id varchar(50) NOT NULL,
+        image_id bigint(20) unsigned DEFAULT NULL,
         image_url text DEFAULT NULL,
         capacity int DEFAULT NULL,
         lat decimal(10,6) DEFAULT NULL,
