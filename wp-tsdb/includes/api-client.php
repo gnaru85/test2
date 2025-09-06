@@ -173,4 +173,26 @@ class Api_Client {
         }
         return $data;
     }
+
+    /**
+     * Fetch lineup information for a specific event.
+     *
+     * @param int $event_id External event ID.
+     *
+     * @return array|\WP_Error
+     */
+    public function event_lineup( $event_id ) {
+        return $this->get( '/lookuplineup.php', [ 'id' => $event_id ] );
+    }
+
+    /**
+     * Fetch transfer history for a player.
+     *
+     * @param int $player_id External player ID.
+     *
+     * @return array|\WP_Error
+     */
+    public function player_transfers( $player_id ) {
+        return $this->get( '/lookuptransfers.php', [ 'id' => $player_id ], true );
+    }
 }
