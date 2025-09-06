@@ -43,9 +43,10 @@ function tsdb_init_plugin() {
     // Instantiate core services.
     $logger       = new TSDB\Logger();
     $rate_limiter = new TSDB\Rate_Limiter();
-    $api_client   = new TSDB\Api_Client( $logger, $rate_limiter );
-    $sync_manager = new TSDB\Sync_Manager( $api_client, $logger );
-    $rest_api     = new TSDB\Rest_API( $api_client );
+    $cache        = new TSDB\Cache_Store();
+    $api_client   = new TSDB\Api_Client( $logger, $rate_limiter, $cache );
+    $sync_manager = new TSDB\Sync_Manager( $api_client, $logger, $cache );
+    $rest_api     = new TSDB\Rest_API( $api_client, $cache );
     $admin_ui     = new TSDB\Admin_UI( $api_client, $sync_manager );
 
     // Boot services.

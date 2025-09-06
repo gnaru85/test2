@@ -6,9 +6,16 @@ namespace TSDB;
  */
 class Rest_API {
     protected $api;
+    protected $cache;
 
-    public function __construct( Api_Client $api ) {
-        $this->api = $api;
+    const TTL_LEAGUES  = HOUR_IN_SECONDS;
+    const TTL_FIXTURE_SCHEDULED = 10 * MINUTE_IN_SECONDS;
+    const TTL_FIXTURE_LIVE      = 30; // seconds
+    const TTL_FIXTURE_FINISHED  = HOUR_IN_SECONDS;
+
+    public function __construct( Api_Client $api, Cache_Store $cache ) {
+        $this->api   = $api;
+        $this->cache = $cache;
     }
 
     public function register_routes() {
@@ -43,6 +50,13 @@ class Rest_API {
                 'callback' => [ $this, 'remote_seasons' ],
                 'permission_callback' => '__return_true',
             ] );
+            register_rest_route( 'tsdb/v1', '/cache', [
+                'methods'  => 'DELETE',
+                'callback' => [ $this, 'purge_cache' ],
+                'permission_callback' => function () {
+                    return current_user_can( 'manage_options' );
+                },
+            ] );
         } );
     }
 
@@ -61,8 +75,13 @@ class Rest_API {
             $where  .= ' AND sport = %s';
             $args[]  = $sport;
         }
-        $sql = $wpdb->prepare( "SELECT * FROM {$table} WHERE {$where} ORDER BY name", $args );
-        $rows = $wpdb->get_results( $sql );
+        $cache_key = 'leagues_' . md5( $country . '_' . $sport );
+        $rows      = $this->cache->get( $cache_key );
+        if ( false === $rows ) {
+            $sql  = $wpdb->prepare( "SELECT * FROM {$table} WHERE {$where} ORDER BY name", $args );
+            $rows = $wpdb->get_results( $sql );
+            $this->cache->set( $cache_key, $rows, self::TTL_LEAGUES );
+        }
         return rest_ensure_response( $rows );
     }
 
@@ -70,9 +89,20 @@ class Rest_API {
         global $wpdb;
         $league = absint( $request->get_param( 'league' ) );
         $status = sanitize_text_field( $request->get_param( 'status' ) );
-        $table  = $wpdb->prefix . 'tsdb_events';
-        $sql    = $wpdb->prepare( "SELECT * FROM {$table} WHERE league_id=%d AND status=%s ORDER BY utc_start ASC", $league, $status );
-        $rows   = $wpdb->get_results( $sql );
+        $table     = $wpdb->prefix . 'tsdb_events';
+        $cache_key = 'fixtures_' . $league . '_' . $status;
+        $rows      = $this->cache->get( $cache_key );
+        if ( false === $rows ) {
+            $sql  = $wpdb->prepare( "SELECT * FROM {$table} WHERE league_id=%d AND status=%s ORDER BY utc_start ASC", $league, $status );
+            $rows = $wpdb->get_results( $sql );
+            $ttl  = self::TTL_FIXTURE_SCHEDULED;
+            if ( in_array( $status, [ 'live', 'inplay' ], true ) ) {
+                $ttl = self::TTL_FIXTURE_LIVE;
+            } elseif ( 'finished' === $status ) {
+                $ttl = self::TTL_FIXTURE_FINISHED;
+            }
+            $this->cache->set( $cache_key, $rows, $ttl );
+        }
         return rest_ensure_response( $rows );
     }
 
@@ -97,5 +127,10 @@ class Rest_API {
         $league = sanitize_text_field( $request->get_param( 'league' ) );
         $data   = $this->api->seasons( $league );
         return rest_ensure_response( $data['seasons'] ?? [] );
+    }
+
+    public function purge_cache() {
+        $this->cache->flush();
+        return rest_ensure_response( [ 'purged' => true ] );
     }
 }
