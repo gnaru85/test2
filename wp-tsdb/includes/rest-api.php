@@ -147,6 +147,19 @@ class Rest_API {
                     ],
                 ],
             ] );
+            register_rest_route( 'tsdb/v1', '/broadcast', [
+                'methods'  => 'GET',
+                'callback' => [ $this, 'get_broadcast' ],
+                'permission_callback' => [ $this, 'permissions_check' ],
+                'args'     => [
+                    'event' => [
+                        'description'       => 'Event external ID.',
+                        'type'              => 'integer',
+                        'required'          => true,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ] );
             register_rest_route( 'tsdb/v1', '/cache', [
                 'methods'  => 'DELETE',
                 'callback' => [ $this, 'purge_cache' ],
@@ -449,10 +462,24 @@ class Rest_API {
         if ( $data ) {
             global $wpdb;
             $team_table    = $wpdb->prefix . 'tsdb_teams';
+            $event_table   = $wpdb->prefix . 'tsdb_events';
+            $timeline_tbl  = $wpdb->prefix . 'tsdb_event_timeline';
+            $stats_tbl     = $wpdb->prefix . 'tsdb_event_stats';
             $home_badge_id = $wpdb->get_var( $wpdb->prepare( "SELECT badge_id FROM {$team_table} WHERE ext_id = %s", $data['idHomeTeam'] ?? '' ) );
             $away_badge_id = $wpdb->get_var( $wpdb->prepare( "SELECT badge_id FROM {$team_table} WHERE ext_id = %s", $data['idAwayTeam'] ?? '' ) );
             $data['home_badge'] = $home_badge_id ? wp_get_attachment_url( $home_badge_id ) : null;
             $data['away_badge'] = $away_badge_id ? wp_get_attachment_url( $away_badge_id ) : null;
+
+            $event_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$event_table} WHERE ext_id = %s", $id ) );
+            if ( $event_id ) {
+                $rows = $wpdb->get_results( $wpdb->prepare( "SELECT minute, type, team_id, player_id, assist_id, detail_json FROM {$timeline_tbl} WHERE event_id = %d ORDER BY minute", $event_id ) );
+                foreach ( $rows as $r ) {
+                    $r->detail_json = $r->detail_json ? json_decode( $r->detail_json, true ) : null;
+                }
+                $data['timeline'] = $rows;
+                $stats = $wpdb->get_var( $wpdb->prepare( "SELECT stats_json FROM {$stats_tbl} WHERE event_id = %d", $event_id ) );
+                $data['stats'] = $stats ? json_decode( $stats, true ) : null;
+            }
         }
         return $this->etag_response( $request, $data );
     }
@@ -542,6 +569,42 @@ class Rest_API {
                 return $res;
             }
             $data = $res['tvevents'] ?? [];
+            $this->cache->set( $cache_key, $data, self::TTL_TV );
+        }
+        return $this->etag_response( $request, $data );
+    }
+
+    /**
+     * Retrieve broadcast information for an event from the local database.
+     *
+     * @param \WP_REST_Request $request Request object.
+     * @return \WP_REST_Response
+     */
+    public function get_broadcast( $request ) {
+        global $wpdb;
+        $event_ext = absint( $request->get_param( 'event' ) );
+        $cache_key = 'broadcast_' . $event_ext;
+        $data      = $this->cache->get( $cache_key );
+        if ( false === $data ) {
+            $events = $wpdb->prefix . 'tsdb_events';
+            $tv_tbl = $wpdb->prefix . 'tsdb_broadcast';
+            $event  = $wpdb->get_row( $wpdb->prepare( "SELECT league_id, season_id, utc_start FROM {$events} WHERE ext_id = %s", $event_ext ) );
+            if ( $event ) {
+                $date = gmdate( 'Y-m-d', strtotime( $event->utc_start ) );
+                $rows = $wpdb->get_results( $wpdb->prepare( "SELECT country, channel, payload_json FROM {$tv_tbl} WHERE league_id = %d AND season_id = %d AND date_utc = %s", $event->league_id, $event->season_id, $date ) );
+                $data = [];
+                foreach ( $rows as $row ) {
+                    $payload = $row->payload_json ? json_decode( $row->payload_json, true ) : [];
+                    if ( isset( $payload['idEvent'] ) && (string) $payload['idEvent'] !== (string) $event_ext ) {
+                        continue;
+                    }
+                    $payload['country'] = $row->country;
+                    $payload['channel'] = $row->channel;
+                    $data[] = $payload;
+                }
+            } else {
+                $data = [];
+            }
             $this->cache->set( $cache_key, $data, self::TTL_TV );
         }
         return $this->etag_response( $request, $data );
