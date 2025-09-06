@@ -7,12 +7,14 @@ namespace TSDB;
 class Sync_Manager {
     protected $api;
     protected $logger;
+    protected $cache;
     protected $next_runs = [];
     protected $active_leagues = [];
 
-    public function __construct( Api_Client $api, Logger $logger ) {
+    public function __construct( Api_Client $api, Logger $logger, Cache_Store $cache ) {
         $this->api    = $api;
         $this->logger = $logger;
+        $this->cache  = $cache;
         $this->next_runs     = get_option( 'tsdb_sync_next_runs', [] );
         $this->active_leagues = get_option( 'tsdb_active_leagues', [] );
     }
@@ -331,6 +333,12 @@ class Sync_Manager {
                 [ '%d','%d','%d','%d','%d','%s','%s','%s','%d','%d','%s','%s' ]
             );
             $count++;
+        }
+        if ( $count ) {
+            $this->cache->delete( 'fixtures_' . $league_id . '_scheduled' );
+            $this->cache->delete( 'fixtures_' . $league_id . '_live' );
+            $this->cache->delete( 'fixtures_' . $league_id . '_inplay' );
+            $this->cache->delete( 'fixtures_' . $league_id . '_finished' );
         }
         return $count;
     }

@@ -7,12 +7,19 @@ namespace TSDB;
 class Api_Client {
     protected $logger;
     protected $rate_limiter;
+    protected $cache;
     protected $base_v1 = 'https://www.thesportsdb.com/api/v1/json';
     protected $base_v2 = 'https://www.thesportsdb.com/api/v2/json';
 
-    public function __construct( Logger $logger, Rate_Limiter $rate_limiter ) {
+    const TTL_SPORTS    = DAY_IN_SECONDS;
+    const TTL_COUNTRIES = DAY_IN_SECONDS;
+    const TTL_LEAGUES   = DAY_IN_SECONDS;
+    const TTL_SEASONS   = DAY_IN_SECONDS;
+
+    public function __construct( Logger $logger, Rate_Limiter $rate_limiter, Cache_Store $cache ) {
         $this->logger       = $logger;
         $this->rate_limiter = $rate_limiter;
+        $this->cache        = $cache;
     }
 
     /**
@@ -60,7 +67,16 @@ class Api_Client {
      * @return array|\WP_Error
      */
     public function sports() {
-        return $this->get( '/all_sports.php' );
+        $key  = 'sports';
+        $data = $this->cache->get( $key );
+        if ( false !== $data ) {
+            return $data;
+        }
+        $data = $this->get( '/all_sports.php' );
+        if ( ! is_wp_error( $data ) ) {
+            $this->cache->set( $key, $data, self::TTL_SPORTS );
+        }
+        return $data;
     }
 
     /**
@@ -69,7 +85,16 @@ class Api_Client {
      * @return array|\WP_Error
      */
     public function countries() {
-        return $this->get( '/all_countries.php' );
+        $key  = 'countries';
+        $data = $this->cache->get( $key );
+        if ( false !== $data ) {
+            return $data;
+        }
+        $data = $this->get( '/all_countries.php' );
+        if ( ! is_wp_error( $data ) ) {
+            $this->cache->set( $key, $data, self::TTL_COUNTRIES );
+        }
+        return $data;
     }
 
     /**
@@ -81,7 +106,16 @@ class Api_Client {
      * @return array|\WP_Error
      */
     public function leagues( $country, $sport ) {
-        return $this->get( '/search_all_leagues.php', [ 'c' => $country, 's' => $sport ] );
+        $key  = 'leagues_' . md5( $country . '_' . $sport );
+        $data = $this->cache->get( $key );
+        if ( false !== $data ) {
+            return $data;
+        }
+        $data = $this->get( '/search_all_leagues.php', [ 'c' => $country, 's' => $sport ] );
+        if ( ! is_wp_error( $data ) ) {
+            $this->cache->set( $key, $data, self::TTL_LEAGUES );
+        }
+        return $data;
     }
 
     /**
@@ -92,6 +126,15 @@ class Api_Client {
      * @return array|\WP_Error
      */
     public function seasons( $league_id ) {
-        return $this->get( '/search_all_seasons.php', [ 'id' => $league_id ] );
+        $key  = 'seasons_' . $league_id;
+        $data = $this->cache->get( $key );
+        if ( false !== $data ) {
+            return $data;
+        }
+        $data = $this->get( '/search_all_seasons.php', [ 'id' => $league_id ] );
+        if ( ! is_wp_error( $data ) ) {
+            $this->cache->set( $key, $data, self::TTL_SEASONS );
+        }
+        return $data;
     }
 }
