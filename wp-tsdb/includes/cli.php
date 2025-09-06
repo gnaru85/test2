@@ -37,8 +37,14 @@ class CLI {
      */
     public function seed( $args, $assoc_args ) {
         list( $league, $season ) = $args;
-        $this->sync_manager->sync_seasons( $league );
-        $this->sync_manager->sync_teams( $league );
+        $result = $this->sync_manager->sync_seasons( $league );
+        if ( is_wp_error( $result ) ) {
+            \WP_CLI::error( $result->get_error_message() );
+        }
+        $result = $this->sync_manager->sync_teams( $league );
+        if ( is_wp_error( $result ) ) {
+            \WP_CLI::error( $result->get_error_message() );
+        }
         $count = $this->sync_manager->sync_events( $league, $season );
         if ( is_wp_error( $count ) ) {
             \WP_CLI::error( $count->get_error_message() );

@@ -62,8 +62,14 @@ class Admin_UI {
         check_ajax_referer( 'tsdb_sync' );
         $league = sanitize_text_field( $_POST['league'] ?? '' );
         $season = sanitize_text_field( $_POST['season'] ?? '' );
-        $this->sync_manager->sync_seasons( $league );
-        $this->sync_manager->sync_teams( $league );
+        $result = $this->sync_manager->sync_seasons( $league );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( $result->get_error_message() );
+        }
+        $result = $this->sync_manager->sync_teams( $league );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( $result->get_error_message() );
+        }
         $count = $this->sync_manager->sync_events( $league, $season );
         if ( is_wp_error( $count ) ) {
             wp_send_json_error( $count->get_error_message() );

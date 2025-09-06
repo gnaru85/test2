@@ -153,14 +153,18 @@ class Sync_Manager {
     public function run_league_sync( $league_ext_id ) {
         // Refresh seasons and teams before syncing events.
         $result = $this->sync_seasons( $league_ext_id );
-        if ( is_wp_error( $result ) && 'tsdb_rate_limited' === $result->get_error_code() ) {
-            $this->requeue_sync( $league_ext_id );
+        if ( is_wp_error( $result ) ) {
+            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+                $this->requeue_sync( $league_ext_id );
+            }
             return;
         }
 
         $result = $this->sync_teams( $league_ext_id );
-        if ( is_wp_error( $result ) && 'tsdb_rate_limited' === $result->get_error_code() ) {
-            $this->requeue_sync( $league_ext_id );
+        if ( is_wp_error( $result ) ) {
+            if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+                $this->requeue_sync( $league_ext_id );
+            }
             return;
         }
 
@@ -171,8 +175,10 @@ class Sync_Manager {
         ) );
         if ( $season ) {
             $result = $this->sync_events( $league_ext_id, $season );
-            if ( is_wp_error( $result ) && 'tsdb_rate_limited' === $result->get_error_code() ) {
-                $this->requeue_sync( $league_ext_id );
+            if ( is_wp_error( $result ) ) {
+                if ( 'tsdb_rate_limited' === $result->get_error_code() ) {
+                    $this->requeue_sync( $league_ext_id );
+                }
                 return;
             }
         }
