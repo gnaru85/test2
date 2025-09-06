@@ -119,9 +119,10 @@ class Admin_UI {
     }
 
     public function logs_page() {
+        $level = isset( $_GET['level'] ) ? sanitize_text_field( $_GET['level'] ) : '';
         if ( isset( $_GET['export'] ) ) {
             $format = sanitize_text_field( $_GET['export'] );
-            $logs   = $this->logger->get_logs();
+            $logs   = $this->logger->get_logs( $level ?: null );
             if ( 'csv' === $format ) {
                 header( 'Content-Type: text/csv' );
                 header( 'Content-Disposition: attachment; filename=tsdb-logs.csv' );
@@ -138,13 +139,24 @@ class Admin_UI {
             }
             exit;
         }
-        $logs = $this->logger->get_logs();
+        $logs = $this->logger->get_logs( $level ?: null );
         ?>
         <div class="wrap">
             <h1><?php esc_html_e( 'TSDB Logs', 'tsdb' ); ?></h1>
+            <form method="get" style="margin-bottom:1em;">
+                <input type="hidden" name="page" value="tsdb-logs" />
+                <select name="level">
+                    <option value=""><?php esc_html_e( 'All Levels', 'tsdb' ); ?></option>
+                    <option value="debug" <?php selected( $level, 'debug' ); ?>><?php esc_html_e( 'Debug', 'tsdb' ); ?></option>
+                    <option value="info" <?php selected( $level, 'info' ); ?>><?php esc_html_e( 'Info', 'tsdb' ); ?></option>
+                    <option value="warning" <?php selected( $level, 'warning' ); ?>><?php esc_html_e( 'Warning', 'tsdb' ); ?></option>
+                    <option value="error" <?php selected( $level, 'error' ); ?>><?php esc_html_e( 'Error', 'tsdb' ); ?></option>
+                </select>
+                <button class="button"><?php esc_html_e( 'Filter', 'tsdb' ); ?></button>
+            </form>
             <p>
-                <a href="?page=tsdb-logs&amp;export=json" class="button">Export JSON</a>
-                <a href="?page=tsdb-logs&amp;export=csv" class="button">Export CSV</a>
+                <a href="?page=tsdb-logs&amp;export=json<?php echo $level ? '&amp;level=' . urlencode( $level ) : ''; ?>" class="button">Export JSON</a>
+                <a href="?page=tsdb-logs&amp;export=csv<?php echo $level ? '&amp;level=' . urlencode( $level ) : ''; ?>" class="button">Export CSV</a>
             </p>
             <table class="widefat">
                 <thead>

@@ -18,7 +18,9 @@ class CLI {
      */
     public function register() {
         if ( defined( 'WP_CLI' ) && WP_CLI ) {
-            \WP_CLI::add_command( 'tsdb', $this );
+            \WP_CLI::add_command( 'tsdb seed', [ $this, 'seed' ] );
+            \WP_CLI::add_command( 'tsdb live', [ $this, 'live' ] );
+            \WP_CLI::add_command( 'tsdb purge', [ $this, 'purge' ] );
         }
     }
 
