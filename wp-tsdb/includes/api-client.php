@@ -45,20 +45,45 @@ class Api_Client {
         if ( ! empty( $params ) ) {
             $url = add_query_arg( $params, $url );
         }
-        $response = wp_remote_get( $url, [ 'timeout' => 20 ] );
-        if ( is_wp_error( $response ) ) {
-            $this->logger->error( 'api', $response->get_error_message() );
-            return $response;
+
+        $delays   = [ 0, 15, 30, 60 ];
+        $response = null;
+        foreach ( $delays as $idx => $delay ) {
+            if ( $delay ) {
+                sleep( $delay );
+            }
+            $response = wp_remote_get( $url, [ 'timeout' => 20 ] );
+            if ( is_wp_error( $response ) ) {
+                $this->logger->error( 'api', $response->get_error_message() );
+            } else {
+                $code = wp_remote_retrieve_response_code( $response );
+                if ( $code < 400 ) {
+                    break; // success
+                }
+                $this->logger->error( 'api', 'HTTP ' . $code . ' for ' . $endpoint );
+                $response = new \WP_Error( 'tsdb_http_' . $code, 'HTTP ' . $code );
+            }
+
+            // Last attempt? bail with error.
+            if ( $idx === count( $delays ) - 1 ) {
+                return $response;
+            }
         }
-        $code = wp_remote_retrieve_response_code( $response );
-        if ( $code >= 400 ) {
-            $this->logger->error( 'api', 'HTTP ' . $code . ' for ' . $endpoint );
-            return new \WP_Error( 'tsdb_http_' . $code, 'HTTP ' . $code );
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
         }
 
         $body = wp_remote_retrieve_body( $response );
         $data = json_decode( $body, true );
         return $data;
+    }
+
+    /**
+     * Expose the rate limiter instance.
+     */
+    public function get_rate_limiter() {
+        return $this->rate_limiter;
     }
 
     /**
