@@ -7,10 +7,12 @@ namespace TSDB;
 class CLI {
     protected $sync_manager;
     protected $cache;
+    protected $logger;
 
-    public function __construct( Sync_Manager $sync_manager, Cache_Store $cache ) {
+    public function __construct( Sync_Manager $sync_manager, Cache_Store $cache, Logger $logger ) {
         $this->sync_manager = $sync_manager;
         $this->cache        = $cache;
+        $this->logger       = $logger;
     }
 
     /**
@@ -43,6 +45,7 @@ class CLI {
         if ( is_wp_error( $count ) ) {
             \WP_CLI::error( $count->get_error_message() );
         }
+        $this->logger->info( 'cli', 'Seeded league', [ 'league' => $league, 'season' => $season, 'events' => $count ] );
         \WP_CLI::success( sprintf( '%d events seeded', $count ) );
     }
 
@@ -51,6 +54,7 @@ class CLI {
      */
     public function live( $args, $assoc_args ) {
         $this->sync_manager->cron_tick();
+        $this->logger->info( 'cli', 'Live sync triggered' );
         \WP_CLI::success( 'Live sync triggered' );
     }
 
@@ -61,6 +65,7 @@ class CLI {
         $this->cache->flush();
         global $wpdb;
         $wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}tsdb_logs" );
+        $this->logger->info( 'cli', 'Cache and logs purged' );
         \WP_CLI::success( 'Cache and logs purged' );
     }
 }
