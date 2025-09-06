@@ -57,7 +57,7 @@ class Admin_UI {
             delete_option( 'tsdb_api_key' );
             return '';
         }
-        $encrypted = tsdb_encrypt( $value );
+        $encrypted = \tsdb_encrypt( $value );
         delete_option( 'tsdb_api_key' );
         add_option( 'tsdb_api_key', $encrypted, '', 'no' );
         return $encrypted;
@@ -184,7 +184,7 @@ class Admin_UI {
                 <table class="form-table" role="presentation">
                     <tr>
                         <th scope="row"><label for="tsdb_api_key">API Key</label></th>
-                        <td><input name="tsdb_api_key" type="text" id="tsdb_api_key" value="<?php echo esc_attr( tsdb_get_api_key() ); ?>" class="regular-text"></td>
+                        <td><input name="tsdb_api_key" type="text" id="tsdb_api_key" value="<?php echo esc_attr( \tsdb_get_api_key() ); ?>" class="regular-text"></td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="tsdb_default_sport">Default Sport</label></th>
