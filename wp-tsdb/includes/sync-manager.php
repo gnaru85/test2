@@ -44,8 +44,8 @@ class Sync_Manager {
         $now = time();
         foreach ( $this->active_leagues as $ext_id ) {
             $next = $this->next_runs[ $ext_id ] ?? 0;
-            if ( $next <= $now ) {
-                $this->run_league_sync( $ext_id );
+            if ( $next <= $now && ! wp_next_scheduled( 'tsdb_sync_league', [ $ext_id ] ) ) {
+                wp_schedule_single_event( $now, 'tsdb_sync_league', [ $ext_id ] );
             }
         }
     }
@@ -66,6 +66,7 @@ class Sync_Manager {
         update_option( 'tsdb_active_leagues', $rows );
         foreach ( array_keys( $this->next_runs ) as $key ) {
             if ( ! in_array( $key, $rows, true ) ) {
+                wp_clear_scheduled_hook( 'tsdb_sync_league', [ $key ] );
                 unset( $this->next_runs[ $key ] );
             }
         }
@@ -133,6 +134,7 @@ class Sync_Manager {
         $timestamp = $now + $interval;
         $this->next_runs[ $league_ext_id ] = $timestamp;
         update_option( 'tsdb_sync_next_runs', $this->next_runs );
+        wp_schedule_single_event( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
     }
 
     /**
@@ -148,6 +150,7 @@ class Sync_Manager {
         }
         $this->next_runs[ $league_ext_id ] = $timestamp;
         update_option( 'tsdb_sync_next_runs', $this->next_runs );
+        wp_schedule_single_event( $timestamp, 'tsdb_sync_league', [ $league_ext_id ] );
     }
 
     public function run_league_sync( $league_ext_id ) {
