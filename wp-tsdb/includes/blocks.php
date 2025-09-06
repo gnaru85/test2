@@ -20,11 +20,25 @@ function register_blocks() {
         true
     );
 
+    wp_register_script(
+        'tsdb-live-event',
+        TSDB_URL . 'blocks/live-event.js',
+        [],
+        TSDB_VERSION,
+        true
+    );
+
     if ( function_exists( 'register_block_type' ) ) {
         register_block_type( 'tsdb/live-fixtures', [
             'editor_script' => 'tsdb-live-fixtures',
             'script'        => 'tsdb-live-fixtures',
             'render_callback' => __NAMESPACE__ . '\\render_live_fixtures_block',
+        ] );
+
+        register_block_type( 'tsdb/live-event', [
+            'editor_script' => 'tsdb-live-event',
+            'script'        => 'tsdb-live-event',
+            'render_callback' => __NAMESPACE__ . '\\render_live_event_block',
         ] );
     }
 }
@@ -44,4 +58,20 @@ function render_live_fixtures_block( $attributes = [] ) {
         'status' => $status,
     ];
     return '<div class="tsdb-live-fixtures" data-tsdb="' . esc_attr( wp_json_encode( $data ) ) . '"></div>';
+}
+
+/**
+ * Server-side render callback for live event block.
+ *
+ * @param array $attributes Block attributes.
+ * @return string HTML markup for block container.
+ */
+function render_live_event_block( $attributes = [] ) {
+    $event  = isset( $attributes['event'] ) ? intval( $attributes['event'] ) : 0;
+    $status = isset( $attributes['status'] ) ? sanitize_text_field( $attributes['status'] ) : 'live';
+    $data   = [
+        'event'  => $event,
+        'status' => $status,
+    ];
+    return '<div class="tsdb-live-event" data-tsdb="' . esc_attr( wp_json_encode( $data ) ) . '"></div>';
 }

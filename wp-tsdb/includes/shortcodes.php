@@ -13,6 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 function register_shortcodes() {
     add_shortcode( 'tsdb_live_fixtures', __NAMESPACE__ . '\\shortcode_live_fixtures' );
+    add_shortcode( 'tsdb_live_event', __NAMESPACE__ . '\\shortcode_live_event' );
 }
 add_action( 'init', __NAMESPACE__ . '\\register_shortcodes' );
 
@@ -35,4 +36,25 @@ function shortcode_live_fixtures( $atts ) {
     );
     wp_enqueue_script( 'tsdb-live-fixtures' );
     return '<div class="tsdb-live-fixtures" data-tsdb="' . esc_attr( wp_json_encode( $atts ) ) . '"></div>';
+}
+
+/**
+ * Render live event via shortcode.
+ *
+ * Usage: [tsdb_live_event event="123" status="live"]
+ *
+ * @param array $atts Shortcode attributes.
+ * @return string
+ */
+function shortcode_live_event( $atts ) {
+    $atts = shortcode_atts(
+        [
+            'event'  => 0,
+            'status' => 'live',
+        ],
+        $atts,
+        'tsdb_live_event'
+    );
+    wp_enqueue_script( 'tsdb-live-event' );
+    return '<div class="tsdb-live-event" data-tsdb="' . esc_attr( wp_json_encode( $atts ) ) . '"></div>';
 }
