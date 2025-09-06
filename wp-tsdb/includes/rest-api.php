@@ -23,6 +23,11 @@ class Rest_API {
         $this->cache = $cache;
     }
 
+    /**
+     * Register all REST API routes for the plugin.
+     *
+     * @return void
+     */
     public function register_routes() {
         add_action( 'rest_api_init', function () {
             register_rest_route( 'tsdb/v1', '/leagues', [
